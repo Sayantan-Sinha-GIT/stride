@@ -12,12 +12,28 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const app = createApp();
 
+const kvStore = new Map<string, string>();
+const mockKv = {
+  async get(key: string, type?: string) {
+    const val = kvStore.get(key) ?? null;
+    if (val === null) return null;
+    return type === 'json' ? JSON.parse(val) : val;
+  },
+  async put(key: string, value: string) {
+    kvStore.set(key, value);
+  },
+  async delete(key: string) {
+    kvStore.delete(key);
+  },
+} as unknown as KVNamespace;
+
 const testEnv: Env = {
   DATABASE_URL: process.env.DATABASE_URL || '',
   JWT_SECRET: process.env.JWT_SECRET || 'test-jwt-secret-that-is-32-chars-minimum-1234',
   APP_ORIGIN: 'http://localhost:3000',
   API_ORIGIN: 'http://127.0.0.1:8787',
   CORS_ORIGINS: 'http://localhost:3000',
+  STRIDE_KV: mockKv,
 };
 
 function apiReq(urlPath: string, init: RequestInit = {}) {
@@ -83,6 +99,20 @@ describe('Stride API — Auth, Idempotency, Privacy & Authorization Matrix', () 
       }),
     });
     expect(signupRes.status).toBe(201);
+
+    // Unverified user re-signing up receives 200 and a fresh OTP code
+    const retrySignupRes = await apiReq('/v1/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: testEmail,
+        password: 'TestPassword123!',
+        displayName: 'E2E Runner',
+        handle: testHandle,
+        language: 'en',
+      }),
+    });
+    expect(retrySignupRes.status).toBe(200);
 
     // Fetch verification code directly from DB (API intentionally omits secret codes in responses)
     const tokenRows = await queryRows<{ code_6: string; user_id: string }>(
@@ -303,6 +333,47 @@ describe('Stride API — Auth, Idempotency, Privacy & Authorization Matrix', () 
     const nearbyJson = (await nearbyRes.json()) as { activities: unknown[]; segments: unknown[] };
     expect(Array.isArray(nearbyJson.activities)).toBe(true);
     expect(Array.isArray(nearbyJson.segments)).toBe(true);
+
+    // OAuth single-use KV handoff exchange + replay rejection
+    const handoffCode = 'a'.repeat(48);
+    kvStore.set(
+      `oauth:handoff:${handoffCode}`,
+      JSON.stringify({ accessToken: 'tok-access', refreshToken: 'tok-refresh' })
+    );
+    const ex1 = await apiReq('/v1/auth/oauth-exchange', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: handoffCode }),
+    });
+    expect(ex1.status).toBe(200);
+    const ex1Json = (await ex1.json()) as { accessToken: string; refreshToken: string };
+    expect(ex1Json.accessToken).toBe('tok-access');
+    const ex2 = await apiReq('/v1/auth/oauth-exchange', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: handoffCode }),
+    });
+    expect(ex2.status).toBe(400);
+
+    // Out-of-bounds segment slice returns clean 400 (never 500)
+    const arjunActs = await queryRows<{ id: string }>(
+      testEnv.DATABASE_URL,
+      `SELECT id FROM activities WHERE client_id = 'seed-arjun-cubbon-1' LIMIT 1`
+    );
+    const badSeg = await apiReq('/v1/segments', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${arjunToken}`,
+      },
+      body: JSON.stringify({
+        activityId: arjunActs[0].id,
+        name: 'Out of Bounds Test Segment',
+        startIndex: 99900,
+        endIndex: 99950,
+      }),
+    });
+    expect(badSeg.status).toBe(400);
   });
 
   it('deletes account cleanly with cascading removal', async () => {

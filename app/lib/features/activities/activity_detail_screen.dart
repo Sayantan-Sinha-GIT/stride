@@ -21,6 +21,7 @@ class ActivityDetailScreen extends StatefulWidget {
 
 class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
   bool _loading = true;
+  String? _error;
   Map<String, dynamic>? _activity;
   List<Map<String, dynamic>> _efforts = [];
   List<Map<String, dynamic>> _comments = [];
@@ -40,7 +41,10 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final res = await widget.api.fetchActivityDetail(widget.activityId);
       setState(() {
@@ -48,6 +52,8 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
         _efforts = ((res['segmentEfforts'] as List<dynamic>?) ?? []).whereType<Map<String, dynamic>>().toList();
         _comments = ((res['comments'] as List<dynamic>?) ?? []).whereType<Map<String, dynamic>>().toList();
       });
+    } catch (e) {
+      setState(() => _error = StrideApiClient.extractErrorMessage(e));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -121,7 +127,9 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
                   _load();
                 } catch (e) {
                   if (ctx.mounted) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(e.toString())));
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(content: Text(StrideApiClient.extractErrorMessage(e))),
+                    );
                   }
                 }
               },
@@ -136,10 +144,28 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    if (_loading || _activity == null) {
+    if (_loading) {
       return Scaffold(
         appBar: AppBar(title: Text(l10n.appTitle)),
         body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_error != null || _activity == null) {
+      return Scaffold(
+        appBar: AppBar(title: Text(l10n.appTitle)),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(_error ?? 'Activity not found', textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                FilledButton(onPressed: _load, child: const Text('Retry')),
+              ],
+            ),
+          ),
+        ),
       );
     }
 
@@ -151,11 +177,13 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
     final canEdit = a['canEdit'] == true;
     final splits = ((a['splitsKm'] as List<dynamic>?) ?? []).whereType<Map<String, dynamic>>().toList();
     final points = ((a['points'] as List<dynamic>?) ?? []).whereType<Map<String, dynamic>>().toList();
-    final stream = a['stream'] as Map<String, dynamic>?;
-    final elevSeries = ((stream?['elevations'] as List<dynamic>?) ??
-            points.map((p) => (p['ele'] as num?)?.toDouble() ?? 0.0).toList())
-        .map((e) => (e as num).toDouble())
-        .toList();
+    final rawStream = a['stream'];
+    final elevSeries = rawStream is List && rawStream.isNotEmpty
+        ? rawStream
+            .whereType<Map<String, dynamic>>()
+            .map((pt) => (pt['ele'] as num?)?.toDouble() ?? 0.0)
+            .toList()
+        : points.map((p) => (p['ele'] as num?)?.toDouble() ?? 0.0).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -294,7 +322,7 @@ class _ActivityDetailScreenState extends State<ActivityDetailScreen> {
                 padding: const EdgeInsets.all(12),
                 child: Column(
                   children: splits.map((sp) {
-                    final sec = ((sp['durationS'] as num?) ?? 0).round();
+                    final sec = ((sp['paceSecPerKm'] as num?) ?? (sp['movingTimeS'] as num?) ?? 0).round();
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Row(

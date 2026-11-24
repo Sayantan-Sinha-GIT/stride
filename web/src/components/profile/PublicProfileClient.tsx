@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Flag, Prohibit, UserCheck, UserPlus } from '@phosphor-icons/react';
 import { ActivityCard, type FeedActivityItem } from '@/components/activities/ActivityCard';
 import { useAuth } from '@/components/AuthProvider';
@@ -32,11 +33,14 @@ export function PublicProfileClient({ handle, locale }: { handle: string; locale
   const [data, setData] = useState<PublicProfilePayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [blockedId, setBlockedId] = useState<string | null>(null);
 
   const load = async () => {
+    setError(null);
     try {
       const res = await apiFetch<PublicProfilePayload>(`/v1/users/${handle}`);
       setData(res);
+      setBlockedId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Profile not found');
     }
@@ -77,9 +81,39 @@ export function PublicProfileClient({ handle, locale }: { handle: string; locale
   const blockUser = async () => {
     if (!user) return;
     await apiFetch(`/v1/users/${profile.id}/block`, { method: 'POST' });
+    setBlockedId(profile.id);
     setNotice('User blocked. Follows removed and profile hidden.');
+  };
+
+  const unblockUser = async () => {
+    if (!user || !blockedId) return;
+    await apiFetch(`/v1/users/${blockedId}/block`, { method: 'DELETE' });
+    setBlockedId(null);
+    setNotice('User unblocked.');
     load();
   };
+
+  if (blockedId) {
+    return (
+      <div className="mx-auto max-w-md px-4 py-12">
+        <div className="stride-card flex flex-col items-center gap-4 p-6 text-center">
+          <Prohibit size={32} weight="bold" className="text-[var(--stride-warning)]" />
+          <h1 className="text-lg font-bold">@{profile.handle} has been blocked</h1>
+          <p className="text-xs text-[var(--stride-text-secondary)]">
+            Two-way follows were removed and their activities are hidden from your stream.
+          </p>
+          <div className="flex gap-2">
+            <button type="button" onClick={unblockUser} className="stride-btn-secondary px-4 text-xs">
+              Unblock
+            </button>
+            <Link href={`/${locale}/feed`} className="stride-btn-primary inline-flex items-center px-4 text-xs">
+              Back to Feed
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const reportUser = async () => {
     if (!user) return;

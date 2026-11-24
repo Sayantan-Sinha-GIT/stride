@@ -5,6 +5,7 @@ import {
   getClientIpHint,
   requireAuth,
 } from '../lib/auth.js';
+import { kvGetJson, kvSetJson } from '../lib/cache.js';
 import {
   hashPassword,
   randomSixDigitCode,
@@ -109,24 +110,78 @@ authRouter.post('/signup', async (c) => {
   const email = parsed.data.email.trim().toLowerCase();
   const handle = parsed.data.handle.trim().toLowerCase();
   const lang = pickLang(parsed.data.language);
+  const displayName = parsed.data.displayName.trim();
 
-  const existing = await queryRows<{ id: string }>(
+  const handleConflict = await queryRows<{ id: string }>(
     c.env.DATABASE_URL,
-    `SELECT id FROM users WHERE email = $1 OR handle = $2`,
-    [email, handle]
+    `SELECT id FROM users WHERE handle = $1 AND email <> $2`,
+    [handle, email]
+  );
+  if (handleConflict.length > 0) {
+    return c.json({ error: { code: 'HANDLE_TAKEN', message: 'Handle is already in use.' } }, 409);
+  }
+
+  const existingByEmail = await queryRows<{ id: string; email_verified: boolean; display_name: string }>(
+    c.env.DATABASE_URL,
+    `SELECT id, email_verified, display_name FROM users WHERE email = $1`,
+    [email]
   );
 
-  if (existing.length > 0) {
-    // Do not leak account existence cleanly while still telling client if handle conflict vs email silently
-    const handleOnly = await queryRows<{ id: string }>(
-      c.env.DATABASE_URL,
-      `SELECT id FROM users WHERE handle = $1 AND email <> $2`,
-      [handle, email]
-    );
-    if (handleOnly.length > 0) {
-      return c.json({ error: { code: 'HANDLE_TAKEN', message: 'Handle is already in use.' } }, 409);
+  if (existingByEmail[0]) {
+    const existingUser = existingByEmail[0];
+    if (existingUser.email_verified) {
+      return c.json({ ok: true, message: API_MESSAGES[lang].signupAccepted }, 202);
     }
-    return c.json({ ok: true, message: API_MESSAGES[lang].signupAccepted }, 202);
+
+    const passwordHash = await hashPassword(parsed.data.password);
+    await queryRows(
+      c.env.DATABASE_URL,
+      `UPDATE users SET display_name = $2, handle = $3, updated_at = now() WHERE id = $1`,
+      [existingUser.id, displayName, handle]
+    );
+    await queryRows(
+      c.env.DATABASE_URL,
+      `INSERT INTO auth_identities (user_id, provider, provider_user_id, password_hash)
+       VALUES ($1, 'email', $2, $3)
+       ON CONFLICT (user_id, provider) DO UPDATE SET password_hash = EXCLUDED.password_hash`,
+      [existingUser.id, email, passwordHash]
+    );
+
+    const rawToken = randomTokenHex(24);
+    const tokenHash = await sha256Hex(rawToken);
+    const code6 = randomSixDigitCode();
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+    await queryRows(
+      c.env.DATABASE_URL,
+      `INSERT INTO email_tokens (user_id, email, purpose, token_hash, code_6, expires_at)
+       VALUES ($1, $2, 'verify_email', $3, $4, $5::timestamptz)`,
+      [existingUser.id, email, tokenHash, code6, expiresAt]
+    );
+
+    const origin = c.env.APP_ORIGIN || 'http://localhost:3000';
+    const verifyUrl = `${origin}/${lang}/login?verifyToken=${rawToken}`;
+    const msg = buildVerificationEmail(lang, displayName, code6, verifyUrl);
+    const emailRes = await sendTransactionalEmail(c.env, {
+      toEmail: email,
+      toName: displayName,
+      ...msg,
+    });
+    if (emailRes.mode === 'cap_exceeded') {
+      return c.json({ error: { code: 'EMAIL_CAP_EXCEEDED', message: API_MESSAGES[lang].emailDailyCapHit } }, 503);
+    }
+    if (emailRes.mode === 'error') {
+      console.error('[Stride Brevo Signup Error]', emailRes.detail);
+      return c.json(
+        {
+          error: {
+            code: 'EMAIL_DELIVERY_FAILED',
+            message: 'Unable to send verification email. Please verify your email address or try again.',
+          },
+        },
+        502
+      );
+    }
+    return c.json({ ok: true, message: API_MESSAGES[lang].signupAccepted }, 200);
   }
 
   const passwordHash = await hashPassword(parsed.data.password);
@@ -135,7 +190,7 @@ authRouter.post('/signup', async (c) => {
     `INSERT INTO users (email, email_verified, handle, display_name)
      VALUES ($1, false, $2, $3)
      RETURNING id`,
-    [email, handle, parsed.data.displayName.trim()]
+    [email, handle, displayName]
   );
   const userId = created[0].id;
 
@@ -170,15 +225,27 @@ authRouter.post('/signup', async (c) => {
 
   const origin = c.env.APP_ORIGIN || 'http://localhost:3000';
   const verifyUrl = `${origin}/${lang}/login?verifyToken=${rawToken}`;
-  const msg = buildVerificationEmail(lang, parsed.data.displayName.trim(), code6, verifyUrl);
+  const msg = buildVerificationEmail(lang, displayName, code6, verifyUrl);
   const emailRes = await sendTransactionalEmail(c.env, {
     toEmail: email,
-    toName: parsed.data.displayName.trim(),
+    toName: displayName,
     ...msg,
   });
 
   if (emailRes.mode === 'cap_exceeded') {
     return c.json({ error: { code: 'EMAIL_CAP_EXCEEDED', message: API_MESSAGES[lang].emailDailyCapHit } }, 503);
+  }
+  if (emailRes.mode === 'error') {
+    console.error('[Stride Brevo Signup Error]', emailRes.detail);
+    return c.json(
+      {
+        error: {
+          code: 'EMAIL_DELIVERY_FAILED',
+          message: 'Unable to send verification email. Please verify your email address or try again.',
+        },
+      },
+      502
+    );
   }
 
   return c.json({ ok: true, message: API_MESSAGES[lang].signupAccepted }, 201);
@@ -253,7 +320,17 @@ authRouter.post('/resend-verification', async (c) => {
     );
     const origin = c.env.APP_ORIGIN || 'http://localhost:3000';
     const msg = buildVerificationEmail(lang, users[0].display_name, code6, `${origin}/${lang}/login?verifyToken=${rawToken}`);
-    await sendTransactionalEmail(c.env, { toEmail: email, toName: users[0].display_name, ...msg });
+    const emailRes = await sendTransactionalEmail(c.env, { toEmail: email, toName: users[0].display_name, ...msg });
+    if (emailRes.mode === 'cap_exceeded') {
+      return c.json({ error: { code: 'EMAIL_CAP_EXCEEDED', message: API_MESSAGES[lang].emailDailyCapHit } }, 503);
+    }
+    if (emailRes.mode === 'error') {
+      console.error('[Stride Brevo Resend Error]', emailRes.detail);
+      return c.json(
+        { error: { code: 'EMAIL_DELIVERY_FAILED', message: 'Unable to send verification email right now.' } },
+        502
+      );
+    }
   }
   return c.json({ ok: true, message: API_MESSAGES[lang].signupAccepted });
 });
@@ -323,7 +400,7 @@ authRouter.post('/login', async (c) => {
   );
 
   const isHttps = c.req.url.startsWith('https://');
-  const headers = new Headers();
+  const headers = new Headers({ 'Content-Type': 'application/json' });
   setAuthCookies(headers, tokens.accessToken, tokens.refreshToken, isHttps);
 
   return new Response(
@@ -345,10 +422,7 @@ authRouter.post('/login', async (c) => {
     }),
     {
       status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        ...Object.fromEntries(headers.entries()),
-      },
+      headers,
     }
   );
 });
@@ -482,7 +556,13 @@ authRouter.post('/forgot-password', async (c) => {
       code6,
       `${origin}/${lang}/reset-password?token=${rawToken}`
     );
-    await sendTransactionalEmail(c.env, { toEmail: email, toName: users[0].display_name, ...msg });
+    const emailRes = await sendTransactionalEmail(c.env, { toEmail: email, toName: users[0].display_name, ...msg });
+    if (emailRes.mode === 'cap_exceeded') {
+      return c.json({ error: { code: 'EMAIL_CAP_EXCEEDED', message: API_MESSAGES[lang].emailDailyCapHit } }, 503);
+    }
+    if (emailRes.mode === 'error') {
+      console.error('[Stride Brevo Reset Error]', emailRes.detail);
+    }
   }
 
   return c.json({ ok: true, message: API_MESSAGES[lang].resetAccepted });
@@ -709,12 +789,34 @@ authRouter.get('/google/callback', async (c) => {
       c.req.header('User-Agent') || '',
       getClientIpHint(c)
     );
-    const headers = new Headers({ Location: `${appOrigin}/${locale}/feed` });
+    const oauthCode = randomTokenHex(24);
+    await kvSetJson(
+      c.env.STRIDE_KV,
+      `oauth:handoff:${oauthCode}`,
+      { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken },
+      120
+    );
+    const headers = new Headers({ Location: `${appOrigin}/${locale}/login?oauthCode=${oauthCode}` });
     setAuthCookies(headers, tokens.accessToken, tokens.refreshToken, c.req.url.startsWith('https://'));
     return new Response(null, { status: 302, headers });
   } catch {
     return c.redirect(`${appOrigin}/${locale}/login?error=google_verification_failed`);
   }
+});
+
+authRouter.post('/oauth-exchange', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { code?: string } | null;
+  const code = body?.code?.trim();
+  if (!code || code.length < 16) {
+    return c.json({ error: { code: 'INVALID_OAUTH_CODE', message: 'Invalid or expired sign-in handoff code.' } }, 400);
+  }
+  const key = `oauth:handoff:${code}`;
+  const tokens = await kvGetJson<{ accessToken: string; refreshToken: string }>(c.env.STRIDE_KV, key);
+  if (!tokens?.accessToken || !tokens?.refreshToken) {
+    return c.json({ error: { code: 'INVALID_OAUTH_CODE', message: 'Sign-in handoff expired or already used.' } }, 400);
+  }
+  await c.env.STRIDE_KV?.delete(key);
+  return c.json({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken }, 200);
 });
 
 authRouter.post('/google/token', async (c) => {

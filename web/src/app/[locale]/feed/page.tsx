@@ -169,8 +169,35 @@ export default function FeedPage({ params }: { params: Promise<{ locale: string 
             {m.common.loading}
           </div>
         ) : items.length === 0 ? (
-          <div className="stride-card p-8 text-center text-sm text-[var(--stride-text-secondary)]">
-            {m.common.empty}
+          <div className="stride-cinema-card flex flex-col items-center gap-4 p-8 text-center">
+            <p className="text-sm font-semibold text-[var(--stride-text-primary)]">
+              {scope === 'following'
+                ? locale === 'hi'
+                  ? 'आपकी फॉलोइंग फ़ीड अभी खाली है।'
+                  : 'Your Following stream is empty so far.'
+                : m.common.empty}
+            </p>
+            <p className="max-w-md text-xs text-[var(--stride-text-secondary)]">
+              {scope === 'following'
+                ? locale === 'hi'
+                  ? 'पब्लिक एथलीट्स के रूट्स देखें या अपनी पहली गतिविधि रिकॉर्ड करें।'
+                  : 'Browse public activities to follow local athletes or record your first workout.'
+                : m.common.empty}
+            </p>
+            <div className="flex flex-wrap justify-center gap-2.5">
+              {scope !== 'public' && (
+                <button
+                  type="button"
+                  onClick={() => setScope('public')}
+                  className="stride-btn-primary px-5 text-xs"
+                >
+                  {locale === 'hi' ? 'पब्लिक स्ट्रीम देखें' : 'Explore Public Stream'}
+                </button>
+              )}
+              <Link href={`/${locale}/record`} className="stride-btn-secondary inline-flex items-center px-5 text-xs">
+                {locale === 'hi' ? 'पहली गतिविधि रिकॉर्ड करें' : 'Record / Import First Workout'}
+              </Link>
+            </div>
           </div>
         ) : (
           items.map((act) => (

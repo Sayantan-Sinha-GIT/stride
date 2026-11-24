@@ -36,13 +36,20 @@ export function ChallengeDetailClient({ slug, locale }: { slug: string; locale: 
   const m = getMessages(locale);
   const { user } = useAuth();
   const [data, setData] = useState<ChallengeDetailPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
+    setLoading(true);
+    setError(null);
     try {
       const res = await apiFetch<ChallengeDetailPayload>(`/v1/challenges/${slug}`);
       setData(res);
-    } catch {
+    } catch (err) {
       setData(null);
+      setError(err instanceof Error ? err.message : m.common.notFound);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -50,10 +57,23 @@ export function ChallengeDetailClient({ slug, locale }: { slug: string; locale: 
     load();
   }, [slug, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!data) {
+  if (loading) {
     return (
       <div className="mx-auto max-w-[1380px] px-4 py-12 text-center text-sm text-[var(--stride-text-secondary)]">
         {m.common.loading}
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="mx-auto max-w-xl px-4 py-12">
+        <div className="stride-card p-6 text-center">
+          <p className="text-sm font-semibold text-[var(--stride-danger)]">{error || m.common.notFound}</p>
+          <Link href={`/${locale}/challenges`} className="stride-btn-secondary mt-4 inline-flex items-center px-5 text-xs">
+            {m.common.back}
+          </Link>
+        </div>
       </div>
     );
   }

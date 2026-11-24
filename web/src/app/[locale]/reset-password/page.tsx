@@ -3,7 +3,7 @@
 import React, { Suspense, use, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Key } from '@phosphor-icons/react';
+import { ArrowCounterClockwise, Key } from '@phosphor-icons/react';
 import { normalizeLocale, type Locale } from '@/i18n';
 import { apiFetch } from '@/lib/api';
 
@@ -11,16 +11,18 @@ function ResetPasswordInner({ locale }: { locale: Locale }) {
   const searchParams = useSearchParams();
   const urlToken = searchParams.get('token') || '';
 
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(searchParams.get('email') || '');
   const [code, setCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [step, setStep] = useState<'request' | 'confirm' | 'done'>(urlToken ? 'confirm' : 'request');
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const requestReset = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const requestReset = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     setError(null);
+    setInfo(null);
     setLoading(true);
     try {
       await apiFetch('/v1/auth/forgot-password', {
@@ -29,6 +31,7 @@ function ResetPasswordInner({ locale }: { locale: Locale }) {
         skipAuthRefresh: true,
       });
       setStep('confirm');
+      setInfo(locale === 'hi' ? `${email} पर 6-अंकीय रीसेट कोड भेजा गया है।` : `Sent a 6-digit reset code to ${email}. Check your inbox.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to send reset code');
     } finally {
@@ -39,6 +42,7 @@ function ResetPasswordInner({ locale }: { locale: Locale }) {
   const confirmReset = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setInfo(null);
     setLoading(true);
     try {
       await apiFetch('/v1/auth/reset-password', {
@@ -71,6 +75,11 @@ function ResetPasswordInner({ locale }: { locale: Locale }) {
             {error}
           </div>
         )}
+        {info && (
+          <div className="rounded-xl border border-[var(--stride-success)] bg-[rgba(24,184,122,0.12)] px-3 py-2 text-xs text-[var(--stride-success)]">
+            {info}
+          </div>
+        )}
 
         {step === 'request' && (
           <form onSubmit={requestReset} className="flex flex-col gap-3">
@@ -94,10 +103,11 @@ function ResetPasswordInner({ locale }: { locale: Locale }) {
               <input
                 type="text"
                 required
+                maxLength={6}
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder="6-digit reset code"
-                className="font-mono-num min-h-[44px] rounded-xl border border-[var(--stride-border-strong)] bg-[var(--stride-bg-elevated)] px-3.5 text-sm"
+                className="font-mono-num min-h-[44px] rounded-xl border border-[var(--stride-border-strong)] bg-[var(--stride-bg-elevated)] px-3.5 text-center text-lg tracking-widest"
               />
             )}
             <input
@@ -112,6 +122,31 @@ function ResetPasswordInner({ locale }: { locale: Locale }) {
             <button type="submit" disabled={loading} className="stride-btn-primary text-sm">
               {loading ? '...' : 'Update Password'}
             </button>
+            {!urlToken && (
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => requestReset()}
+                  className="inline-flex items-center gap-1 font-semibold text-[var(--stride-accent)] hover:underline"
+                >
+                  <ArrowCounterClockwise size={14} weight="bold" />
+                  <span>Resend Code</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => {
+                    setStep('request');
+                    setError(null);
+                    setInfo(null);
+                  }}
+                  className="text-[var(--stride-text-secondary)] hover:underline"
+                >
+                  Change Email
+                </button>
+              </div>
+            )}
           </form>
         )}
 

@@ -157,31 +157,46 @@ export default function SettingsPage({ params }: { params: Promise<{ locale: str
 
   const addPrivacyZone = async (e: React.FormEvent) => {
     e.preventDefault();
-    await apiFetch('/v1/me/privacy-zones', {
-      method: 'POST',
-      body: JSON.stringify({
-        name: zoneName,
-        lat: zoneLat,
-        lng: zoneLng,
-        radiusMeters: zoneRadius,
-      }),
-    });
-    setNotice(`Added privacy zone "${zoneName}" (${zoneRadius}m).`);
-    loadAll();
+    setError(null);
+    try {
+      await apiFetch('/v1/me/privacy-zones', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: zoneName,
+          lat: zoneLat,
+          lng: zoneLng,
+          radiusMeters: zoneRadius,
+        }),
+      });
+      setNotice(`Added privacy zone "${zoneName}" (${zoneRadius}m).`);
+      loadAll();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to add privacy zone');
+    }
   };
 
   const removeZone = async (id: string) => {
-    await apiFetch(`/v1/me/privacy-zones/${id}`, { method: 'DELETE' });
-    setZones((prev) => prev.filter((z) => z.id !== id));
+    setError(null);
+    try {
+      await apiFetch(`/v1/me/privacy-zones/${id}`, { method: 'DELETE' });
+      setZones((prev) => prev.filter((z) => z.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to remove zone');
+    }
   };
 
   const saveNotifPrefs = async (next: Record<string, unknown>) => {
+    setError(null);
     setNotifPrefs(next);
-    await apiFetch('/v1/me/notifications/preferences', {
-      method: 'PATCH',
-      body: JSON.stringify(next),
-    });
-    setNotice('Notification preferences updated.');
+    try {
+      await apiFetch('/v1/me/notifications/preferences', {
+        method: 'PATCH',
+        body: JSON.stringify(next),
+      });
+      setNotice('Notification preferences updated.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to save notification preferences');
+    }
   };
 
   const changePassword = async (e: React.FormEvent) => {
@@ -201,26 +216,41 @@ export default function SettingsPage({ params }: { params: Promise<{ locale: str
   };
 
   const revokeSession = async (id: string) => {
-    await apiFetch(`/v1/auth/sessions/${id}`, { method: 'DELETE' });
-    setSessions((prev) => prev.filter((s) => s.id !== id));
+    setError(null);
+    try {
+      await apiFetch(`/v1/auth/sessions/${id}`, { method: 'DELETE' });
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to revoke session');
+    }
   };
 
   const downloadExport = async () => {
-    const data = await apiFetch('/v1/me/export');
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `stride-export-${user.handle}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    setError(null);
+    try {
+      const data = await apiFetch('/v1/me/export');
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `stride-export-${user.handle}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Export failed');
+    }
   };
 
   const deleteAccount = async () => {
     if (deleteConfirm !== 'DELETE') return;
-    await apiFetch('/v1/me', { method: 'DELETE' });
-    clearAuthTokens();
-    router.push(`/${locale}`);
+    setError(null);
+    try {
+      await apiFetch('/v1/me', { method: 'DELETE' });
+      clearAuthTokens();
+      router.push(`/${locale}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Account deletion failed');
+    }
   };
 
   return (
@@ -515,13 +545,15 @@ export default function SettingsPage({ params }: { params: Promise<{ locale: str
             Active providers: <strong className="uppercase">{providers.join(', ') || 'email'}</strong>
           </div>
           <form onSubmit={changePassword} className="flex flex-col gap-2.5 text-xs">
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              placeholder="Current password"
-              className="min-h-[40px] rounded-xl border border-[var(--stride-border-strong)] bg-[var(--stride-bg-elevated)] px-3"
-            />
+            {providers.includes('email') && (
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="Current password"
+                className="min-h-[40px] rounded-xl border border-[var(--stride-border-strong)] bg-[var(--stride-bg-elevated)] px-3"
+              />
+            )}
             <input
               type="password"
               required

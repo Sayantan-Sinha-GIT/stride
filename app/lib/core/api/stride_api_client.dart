@@ -49,6 +49,35 @@ class StrideApiClient {
 
   String get currentBaseUrl => _dio.options.baseUrl;
 
+  static String extractErrorMessage(Object error) {
+    if (error is DioException) {
+      final data = error.response?.data;
+      if (data is Map) {
+        final err = data['error'];
+        if (err is Map && err['message'] is String) {
+          return err['message'] as String;
+        }
+        if (data['message'] is String) {
+          return data['message'] as String;
+        }
+      }
+      if (error.message != null && error.message!.isNotEmpty) {
+        return error.message!;
+      }
+    }
+    return error.toString().replaceFirst('Exception: ', '');
+  }
+
+  static String? extractErrorCode(Object error) {
+    if (error is DioException) {
+      final data = error.response?.data;
+      if (data is Map && data['error'] is Map && data['error']['code'] is String) {
+        return data['error']['code'] as String;
+      }
+    }
+    return null;
+  }
+
   Future<String> loadConfiguredBaseUrl() async {
     return (await _storage.read(key: _kBaseUrlKey)) ?? _dio.options.baseUrl;
   }
@@ -127,11 +156,45 @@ class StrideApiClient {
     return res.data ?? {};
   }
 
-  Future<void> requestPasswordReset(String email) async {
+  Future<void> requestPasswordReset(String email, {String language = 'en'}) async {
     await _dio.post<Map<String, dynamic>>(
       '/v1/auth/forgot-password',
-      data: {'email': email},
+      data: {'email': email, 'language': language},
     );
+  }
+
+  Future<Map<String, dynamic>> verifyEmail({
+    required String email,
+    required String code,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      '/v1/auth/verify-email',
+      data: {'email': email, 'code': code},
+    );
+    return res.data ?? {};
+  }
+
+  Future<Map<String, dynamic>> resendVerification({
+    required String email,
+    String language = 'en',
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      '/v1/auth/resend-verification',
+      data: {'email': email, 'language': language},
+    );
+    return res.data ?? {};
+  }
+
+  Future<Map<String, dynamic>> confirmPasswordReset({
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      '/v1/auth/reset-password',
+      data: {'email': email, 'code': code, 'newPassword': newPassword},
+    );
+    return res.data ?? {};
   }
 
   Future<String?> fetchGoogleWebClientId() async {

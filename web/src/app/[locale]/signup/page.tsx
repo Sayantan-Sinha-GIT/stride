@@ -3,7 +3,7 @@
 import React, { use, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { GoogleLogo, UserPlus } from '@phosphor-icons/react';
+import { ArrowCounterClockwise, GoogleLogo, UserPlus } from '@phosphor-icons/react';
 import { useAuth } from '@/components/AuthProvider';
 import { getMessages, normalizeLocale } from '@/i18n';
 import { apiFetch, getClientApiBase } from '@/lib/api';
@@ -23,10 +23,12 @@ export default function SignupPage({ params }: { params: Promise<{ locale: strin
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setInfo(null);
     setLoading(true);
     try {
       await apiFetch('/v1/auth/signup', {
@@ -35,6 +37,7 @@ export default function SignupPage({ params }: { params: Promise<{ locale: strin
         skipAuthRefresh: true,
       });
       setStep('verify');
+      setInfo(locale === 'hi' ? `${email} पर 6-अंकीय कोड भेजा गया है।` : `Sent a 6-digit verification code to ${email}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : m.common.error);
     } finally {
@@ -45,6 +48,7 @@ export default function SignupPage({ params }: { params: Promise<{ locale: strin
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setInfo(null);
     setLoading(true);
     try {
       await apiFetch('/v1/auth/verify-email', {
@@ -54,6 +58,24 @@ export default function SignupPage({ params }: { params: Promise<{ locale: strin
       });
       await loginWithCredentials(email, password);
       router.push(`/${locale}/feed`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : m.common.error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setError(null);
+    setInfo(null);
+    setLoading(true);
+    try {
+      await apiFetch('/v1/auth/resend-verification', {
+        method: 'POST',
+        body: JSON.stringify({ email, language: locale }),
+        skipAuthRefresh: true,
+      });
+      setInfo(locale === 'hi' ? `${email} पर नया कोड भेजा गया है।` : `Sent a fresh verification code to ${email}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : m.common.error);
     } finally {
@@ -76,6 +98,11 @@ export default function SignupPage({ params }: { params: Promise<{ locale: strin
         {error && (
           <div className="rounded-xl border border-[var(--stride-danger)] bg-[rgba(239,68,68,0.12)] px-3.5 py-2.5 text-xs font-medium text-[var(--stride-danger)]">
             {error}
+          </div>
+        )}
+        {info && (
+          <div className="rounded-xl border border-[var(--stride-success)] bg-[rgba(24,184,122,0.12)] px-3.5 py-2.5 text-xs font-medium text-[var(--stride-success)]">
+            {info}
           </div>
         )}
 
@@ -151,7 +178,7 @@ export default function SignupPage({ params }: { params: Promise<{ locale: strin
         ) : (
           <form onSubmit={handleVerify} className="flex flex-col gap-3.5">
             <p className="text-xs text-[var(--stride-text-secondary)]">
-              Check your inbox (or API dev console if Brevo key is not configured yet) for your 6-digit verification code sent to <strong>{email}</strong>.
+              Enter the 6-digit verification code sent to <strong>{email}</strong>.
             </p>
             <input
               type="text"
@@ -165,6 +192,29 @@ export default function SignupPage({ params }: { params: Promise<{ locale: strin
             <button type="submit" disabled={loading} className="stride-btn-primary text-sm">
               {loading ? '...' : 'Verify & Continue'}
             </button>
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={handleResend}
+                className="inline-flex items-center gap-1 font-semibold text-[var(--stride-accent)] hover:underline"
+              >
+                <ArrowCounterClockwise size={14} weight="bold" />
+                <span>Resend Code</span>
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => {
+                  setStep('register');
+                  setError(null);
+                  setInfo(null);
+                }}
+                className="text-[var(--stride-text-secondary)] hover:underline"
+              >
+                Edit Details
+              </button>
+            </div>
           </form>
         )}
 

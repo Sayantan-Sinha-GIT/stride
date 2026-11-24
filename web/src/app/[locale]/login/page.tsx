@@ -1,26 +1,96 @@
 'use client';
 
-import React, { Suspense, use, useState } from 'react';
+import React, { Suspense, use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { GoogleLogo, ShieldCheck, SignIn } from '@phosphor-icons/react';
+import { ArrowCounterClockwise, GoogleLogo, ShieldCheck, SignIn } from '@phosphor-icons/react';
 import { useAuth } from '@/components/AuthProvider';
 import { getMessages, normalizeLocale, type Locale } from '@/i18n';
-import { apiFetch, getClientApiBase } from '@/lib/api';
+import { apiFetch, getClientApiBase, saveAuthTokens } from '@/lib/api';
+
+function formatAuthError(code: string | null): string | null {
+  if (!code) return null;
+  const map: Record<string, string> = {
+    google_oauth_unavailable: 'Google Sign-In is currently unavailable. Please sign in with email or try again.',
+    google_exchange_failed: 'Google authorization expired or could not be completed. Please try again.',
+    missing_id_token: 'Google did not return an identity token. Please try again.',
+    google_verification_failed: 'Unable to verify your Google account. If an unverified email account exists, verify it first.',
+  };
+  return map[code] || code;
+}
 
 function LoginInner({ locale }: { locale: Locale }) {
   const m = getMessages(locale);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { loginWithCredentials } = useAuth();
+  const { loginWithCredentials, refreshMe } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [verifyCode, setVerifyCode] = useState('');
   const [showVerify, setShowVerify] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(searchParams.get('error'));
+  const [error, setError] = useState<string | null>(formatAuthError(searchParams.get('error')));
   const [info, setInfo] = useState<string | null>(null);
+
+  useEffect(() => {
+    const oauthCode = searchParams.get('oauthCode');
+    const verifyToken = searchParams.get('verifyToken');
+
+    if (oauthCode) {
+      let active = true;
+      setLoading(true);
+      setError(null);
+      setInfo(locale === 'hi' ? 'Google से लॉग इन पूरा हो रहा है...' : 'Completing Google sign-in...');
+      apiFetch<{ accessToken: string; refreshToken: string }>('/v1/auth/oauth-exchange', {
+        method: 'POST',
+        body: JSON.stringify({ code: oauthCode }),
+        skipAuthRefresh: true,
+      })
+        .then(async (res) => {
+          if (!active) return;
+          saveAuthTokens(res.accessToken, res.refreshToken);
+          await refreshMe();
+          router.replace(`/${locale}/feed`);
+        })
+        .catch((err) => {
+          if (!active) return;
+          setInfo(null);
+          setError(err instanceof Error ? err.message : 'Unable to complete Google sign-in.');
+          setLoading(false);
+        });
+      return () => {
+        active = false;
+      };
+    }
+
+    if (verifyToken) {
+      let active = true;
+      setLoading(true);
+      setError(null);
+      apiFetch('/v1/auth/verify-email', {
+        method: 'POST',
+        body: JSON.stringify({ token: verifyToken }),
+        skipAuthRefresh: true,
+      })
+        .then(() => {
+          if (!active) return;
+          setShowVerify(false);
+          setInfo(locale === 'hi' ? 'ईमेल सत्यापित हो गया! जारी रखने के लिए साइन इन करें।' : 'Email verified! Sign in below to continue.');
+          router.replace(`/${locale}/login`);
+        })
+        .catch((err) => {
+          if (!active) return;
+          setError(err instanceof Error ? err.message : 'Verification link is invalid or expired.');
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+      return () => {
+        active = false;
+      };
+    }
+  }, [searchParams, locale, refreshMe, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,6 +114,7 @@ function LoginInner({ locale }: { locale: Locale }) {
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setInfo(null);
     setLoading(true);
     try {
       await apiFetch('/v1/auth/verify-email', {
@@ -52,9 +123,28 @@ function LoginInner({ locale }: { locale: Locale }) {
         skipAuthRefresh: true,
       });
       setShowVerify(false);
-      setInfo(locale === 'hi' ? 'ईमेल सत्यापित हो गया! अब लॉग इन करें।' : 'Email verified! Signing you in...');
+      setInfo(locale === 'hi' ? 'ईमेल सत्यापित हो गया! अब लॉग इन हो रहा है...' : 'Email verified! Signing you in...');
       await loginWithCredentials(email, password);
       router.push(`/${locale}/feed`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : m.common.error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (!email.trim()) return;
+    setError(null);
+    setInfo(null);
+    setLoading(true);
+    try {
+      await apiFetch('/v1/auth/resend-verification', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim(), language: locale }),
+        skipAuthRefresh: true,
+      });
+      setInfo(locale === 'hi' ? `${email.trim()} पर नया 6-अंकीय कोड भेजा गया है।` : `Sent a fresh 6-digit code to ${email.trim()}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : m.common.error);
     } finally {
@@ -74,6 +164,10 @@ function LoginInner({ locale }: { locale: Locale }) {
       setLoading(false);
     }
   };
+
+  const forgotHref = email.trim()
+    ? `/${locale}/reset-password?email=${encodeURIComponent(email.trim())}`
+    : `/${locale}/reset-password`;
 
   return (
     <div className="mx-auto max-w-md px-4 py-12">
@@ -123,7 +217,7 @@ function LoginInner({ locale }: { locale: Locale }) {
             </label>
 
             <div className="flex justify-end">
-              <Link href={`/${locale}/reset-password`} className="text-xs font-medium text-[var(--stride-accent)] hover:underline">
+              <Link href={forgotHref} className="text-xs font-medium text-[var(--stride-accent)] hover:underline">
                 {locale === 'hi' ? 'पासवर्ड भूल गए?' : 'Forgot password?'}
               </Link>
             </div>
@@ -152,8 +246,31 @@ function LoginInner({ locale }: { locale: Locale }) {
               className="font-mono-num min-h-[44px] rounded-xl border border-[var(--stride-border-strong)] bg-[var(--stride-bg-elevated)] px-3.5 text-center text-lg tracking-widest text-[var(--stride-text-primary)]"
             />
             <button type="submit" disabled={loading} className="stride-btn-primary text-sm">
-              Verify & Sign In
+              {loading ? '...' : 'Verify & Sign In'}
             </button>
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={handleResend}
+                className="inline-flex items-center gap-1 font-semibold text-[var(--stride-accent)] hover:underline"
+              >
+                <ArrowCounterClockwise size={14} weight="bold" />
+                <span>Resend 6-digit code</span>
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => {
+                  setShowVerify(false);
+                  setError(null);
+                  setInfo(null);
+                }}
+                className="text-[var(--stride-text-secondary)] hover:underline"
+              >
+                Back to Sign In
+              </button>
+            </div>
           </form>
         )}
 

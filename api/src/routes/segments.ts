@@ -91,6 +91,9 @@ segmentsRouter.post('/', requireAuth, async (c) => {
 
   const pts = Array.isArray(act.raw_points_json) ? act.raw_points_json : [];
   const slice = pts.slice(d.startIndex, Math.min(pts.length, d.endIndex + 1));
+  if (slice.length < 2) {
+    return c.json({ error: { code: 'VALIDATION_ERROR', message: 'Selected point range is out of bounds.' } }, 400);
+  }
 
   // Pre-fetch nearby existing segments of same sport for duplicate protection
   const nearby = await queryRows<{

@@ -114,6 +114,7 @@ export function ActivityDetailClient({
   const [segName, setSegName] = useState('');
   const [segStartIdx, setSegStartIdx] = useState(0);
   const [segEndIdx, setSegEndIdx] = useState(10);
+  const [segError, setSegError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -229,6 +230,10 @@ export function ActivityDetailClient({
         ? {
             ...prev,
             comments: prev.comments.filter((c) => c.id !== commentId),
+            activity: {
+              ...prev.activity,
+              commentCount: Math.max(0, prev.activity.commentCount - 1),
+            },
           }
         : prev
     );
@@ -272,6 +277,7 @@ export function ActivityDetailClient({
   const createSegment = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSegError(null);
     try {
       const res = await apiFetch<{ segment: { id: string; name: string } }>('/v1/segments', {
         method: 'POST',
@@ -286,7 +292,7 @@ export function ActivityDetailClient({
       setShowSegModal(false);
       router.push(`/${locale}/segments/${res.segment.id}`);
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : 'Segment validation failed');
+      setSegError(err instanceof Error ? err.message : 'Segment validation failed');
     }
   };
 
@@ -450,6 +456,11 @@ export function ActivityDetailClient({
       {showSegModal && (
         <form onSubmit={createSegment} className="stride-card flex flex-col gap-3 border-[var(--stride-accent)] p-5">
           <h2 className="text-base font-bold">Create Competitive Segment from This Route</h2>
+          {segError && (
+            <div className="rounded-xl border border-[var(--stride-danger)] bg-[rgba(239,68,68,0.12)] px-3.5 py-2 text-xs font-medium text-[var(--stride-danger)]">
+              {segError}
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <label className="flex flex-col gap-1 text-xs font-semibold">
               Segment Name

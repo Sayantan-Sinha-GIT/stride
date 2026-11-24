@@ -48,15 +48,23 @@ export function SegmentDetailClient({
   const { user, settings } = useAuth();
 
   const [segment, setSegment] = useState<SegmentDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [entries, setEntries] = useState<LeaderboardRow[]>([]);
   const [range, setRange] = useState<'all' | 'year' | 'month' | 'following'>('all');
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
+    setLoading(true);
+    setError(null);
     apiFetch<{ segment: SegmentDetail }>(`/v1/segments/${segmentId}`)
       .then((res) => setSegment(res.segment))
-      .catch(() => {});
-  }, [segmentId]);
+      .catch((err) => {
+        setSegment(null);
+        setError(err instanceof Error ? err.message : m.common.notFound);
+      })
+      .finally(() => setLoading(false));
+  }, [segmentId, m.common.notFound]);
 
   useEffect(() => {
     apiFetch<{ entries: LeaderboardRow[] }>(`/v1/segments/${segmentId}/leaderboard?range=${range}`)
@@ -89,10 +97,23 @@ export function SegmentDetailClient({
     setNotice('Segment saved to your routes!');
   };
 
-  if (!segment) {
+  if (loading) {
     return (
       <div className="mx-auto max-w-[1380px] px-4 py-12 text-center text-sm text-[var(--stride-text-secondary)]">
         {m.common.loading}
+      </div>
+    );
+  }
+
+  if (error || !segment) {
+    return (
+      <div className="mx-auto max-w-xl px-4 py-12">
+        <div className="stride-card p-6 text-center">
+          <p className="text-sm font-semibold text-[var(--stride-danger)]">{error || m.common.notFound}</p>
+          <Link href={`/${locale}/segments`} className="stride-btn-secondary mt-4 inline-flex items-center px-5 text-xs">
+            {m.common.back}
+          </Link>
+        </div>
       </div>
     );
   }
