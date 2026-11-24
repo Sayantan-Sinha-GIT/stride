@@ -12,10 +12,10 @@
 - **API URL**: https://stride-api.srimantasutapa123.workers.dev
 - **APK URL**: https://stride-apk.srimantasutapa123.workers.dev/stride-android.apk
 - **GitHub Repository**: https://github.com/Sayantan-Sinha-GIT/stride
-- **Last Updated**: 2026-11-24 13:45
+- **Last Updated**: 2026-11-24 15:02
 
 ## Completed Requirements
-- **REQ-01..REQ-22**: All 22 checklist requirements implemented, tested across desktop/tablet/mobile (`1440px`, `768px`, `390px`, `140 FPS` mobile scroll probe, `0` broken images, `overflowX: false`), verified on Android 15 Emulator (`dispatch-test`) with live `adb emu geo fix` GPS tracking (`0.16 km`, `3:40 /km`, `6 Pts`) + force-stop crash recovery + Neon sync + bilingual Hindi Settings, and deployed 100% on Cloudflare Workers (`stride-web`, `stride-api`, `stride-apk`) backed by Neon Postgres 17 + PostGIS 3.5 (with Vercel completely removed).
+- **REQ-01..REQ-22**: All 22 checklist requirements implemented and verified across desktop (`1440px`) and mobile (`390px`, Light/Dark, `/en` & `/hi`, `overflowX: false`, `0` broken images), live Gmail Brevo OTP signup & password reset E2E on both website and Android Emulator, Android `ActivityDetailScreen` / `SegmentDetailScreen` / `Clubs` / live `adb emu geo fix` GPS tracking, GitHub Actions `Stride CI` (`45361248258` green), and 100% Cloudflare Workers deployment (`stride-web`, `stride-api`, `stride-apk` SHA-256 verified) with Vercel completely removed.
 
 ## Remaining Requirements
 - None for v1 launch.
