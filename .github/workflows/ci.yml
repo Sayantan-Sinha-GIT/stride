@@ -51,9 +51,9 @@ jobs:
         with:
           distribution: "temurin"
           java-version: "21"
-      - uses: android-actions/setup-android@v3
       - working-directory: app-lite
         run: |
+          yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
           sed -i 's/\r$//' gradlew
           chmod +x gradlew
           ./gradlew :app:testDebugUnitTest :app:assembleRelease
