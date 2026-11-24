@@ -5,13 +5,14 @@ Every push / pull request runs:
 - `@stride/track-engine` typecheck, build & Vitest unit tests
 - `@stride/api` typecheck & Vitest API integration tests (when staging DB secret configured)
 - `@stride/web` ESLint, typecheck & Next.js production build
-- `/app` Flutter `flutter analyze`, `flutter test`, and Android release APK/AAB build job
+- `/app` Flutter (`Java 21` + `Flutter 3.50.1`, conditional `google-services.json` Gradle plugin) `flutter analyze`, `flutter test`, and Android release APK build job
 
 ## 2. Production Hosting (Cloudflare Free Plan)
-- **API (`/api`)**: Deployed to Cloudflare Workers via `wrangler deploy`.
+- **API (`/api`)**: Deployed to Cloudflare Workers (`stride-api`) via `npx wrangler deploy`.
   - Required Cloudflare KV namespace (`STRIDE_KV`) updated in `api/wrangler.toml`.
   - Production secrets set via `npx wrangler secret put <KEY>` (`DATABASE_URL`, `JWT_SECRET`, `OLA_MAPS_API_KEY`, `BREVO_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `FCM_PROJECT_ID`, `FCM_CLIENT_EMAIL`, `FCM_PRIVATE_KEY`).
-- **Website (`/web`)**: Built and deployed via `@opennextjs/cloudflare` (`opennextjs-cloudflare build && opendev/wrangler deploy`) or Cloudflare Pages.
+- **Website (`/web`)**: Built and deployed to Cloudflare Workers (`stride-web`) via `@opennextjs/cloudflare` (`npx opennextjs-cloudflare build && npx opennextjs-cloudflare deploy`).
+- **Android APK Host (`/apk-host`)**: Built with Flutter (`flutter build apk --release --dart-define=STRIDE_API_URL=https://stride-api.srimantasutapa123.workers.dev`), split into chunked Workers Static Assets, and deployed to Cloudflare Workers (`stride-apk`) via `node scripts/prepare-apk.mjs && npx wrangler deploy`.
 
 ## 3. Android Release Signing Steps (Owner Action Before Play Store)
 1. Generate an upload keystore once on your machine (keep it safe & never commit to git):

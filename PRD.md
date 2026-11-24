@@ -72,16 +72,17 @@ Primary market is India (distances in km by default, local time zones, INR not n
 | Area | Choice | Notes |
 |---|---|---|
 | Mobile app | **Flutter** (Android first, iOS-ready) | Background GPS, offline-first recording |
-| Website | **Next.js (or equivalent) deployed on Cloudflare** (Workers via the OpenNext/Cloudflare adapter, or Pages) | Server-rendered public pages for SEO and share previews |
+| Website | **Next.js 15 deployed on Cloudflare Workers** via `@opennextjs/cloudflare` (`stride-web.srimantasutapa123.workers.dev`) | Server-rendered public pages for SEO and share previews; zero Vercel dependency |
+| Android APK hosting | **Cloudflare Workers chunked Static Assets** (`apk-host/` -> `stride-apk.srimantasutapa123.workers.dev/stride-android.apk`) | Streams `86.6 MB` release APK (`18 MiB` chunks + SHA-256 manifest); `/api/download-apk` redirects 302 with zero R2/card requirement |
 | API | **Cloudflare Workers** (a single TypeScript API, e.g. with Hono) | Used by both the app and the website |
 | Database | **Neon (Postgres)** with the **PostGIS** extension | Use Neon's serverless driver from Workers; use pooled connections; handle scale-to-zero cold starts gracefully |
 | Email | **Brevo** (transactional email API) | Verification, password reset, optional digest |
 | Login | **Email login + Google login** | Custom auth built on Workers (section 7). No Firebase Auth |
 | Notifications | **Firebase Cloud Messaging (FCM)** only | Sending from Workers via FCM HTTP v1 (service-account OAuth token signed with Web Crypto) |
-| Maps | **Ola Maps (Krutrim)** if feasible, with a free fallback | See section 6 |
-| Scheduled jobs | **Cloudflare Cron Triggers** | Summaries, heatmap aggregation, cleanup |
+| Maps | **OpenFreeMap** (MapLibre vector `dark` / `positron` styles, zero API key/card) active via `/v1/maps/config` abstraction | Fallback activated after Ola Maps direct vector style endpoint returned HTTP 401; geocoding still cached server-side in KV |
+| Scheduled jobs | **Protected admin endpoint** `POST /v1/admin/cron/heatmap` + cleanup trigger | Cloud account free-tier 5-cron cap is already allocated to other Workers; same aggregation pipeline invoked on demand |
 | Caching | Cloudflare Cache API / KV | Public pages, leaderboards, heatmap tiles |
-| Code hosting | GitHub (monorepo recommended: `/app`, `/web`, `/api`, `/docs`) | Commit per feature; keep `main` deployable |
+| Code hosting | GitHub (monorepo: `/app`, `/web`, `/api`, `/apk-host`, `/packages/track-engine`, `/docs`) | Commit per feature; keep `main` deployable |
 
 Everything on this list must be usable on free plans. If any component needs a payment method (credit/debit card) on the account to unlock its free tier, **do not use it**. Pick a free alternative that needs no card, and record the choice.
 
@@ -351,3 +352,18 @@ Payments or subscriptions, ads, in-app messaging between users, live tracking sh
 - Segment matching and leaderboards pass the test suite; privacy tests pass with no leakage paths.
 - Everything runs on free tiers, with limits documented and caching in place.
 - CI is green, production is deployed from `main`, and documentation is complete.
+
+---
+
+## 19. Implemented Production Alignment (Final As-Built Notes)
+
+- **100% Cloudflare Workers Production Architecture (Zero Vercel)**:
+  - Website (`stride-web`): `https://stride-web.srimantasutapa123.workers.dev`
+  - API (`stride-api`): `https://stride-api.srimantasutapa123.workers.dev`
+  - APK Host (`stride-apk`): `https://stride-apk.srimantasutapa123.workers.dev/stride-android.apk` (SHA-256 verified chunked streaming via Workers Static Assets; redirected from `/api/download-apk`). All Vercel deployments were permanently removed.
+- **Authentication & Cross-Origin Session Delivery**:
+  - Passwords hashed with Web Crypto `PBKDF2-SHA256` (100,000 iterations).
+  - Email verification and password reset use localized 6-digit Brevo OTP codes (`en` / `hi`) with resend/edit UX on both web and Flutter.
+  - Web Google OAuth signs users in via single-use `STRIDE_KV` `?oauthCode=` exchange (`POST /v1/auth/oauth-exchange`) so shared `*.workers.dev` public-suffix origins authenticate seamlessly alongside HttpOnly refresh cookies and bearer tokens.
+- **UI/UX**: Flagship bespoke identity applied per the owner's UI/UX preferences across Web (`web/src/styles/tokens.css`, GSAP/Lenis/Three.js GLSL, responsive `1440px` & `390px` viewports) and Flutter (`app/lib/theme/stride_theme.dart`), preserving Light/Dark/System theme switching and full English/Hindi (`en` / `hi`) parity.
+- **CI/CD & Documentation**: GitHub Actions (`Stride CI`) runs Node 22 (`web-and-api`) and Java 21 + Flutter `3.50.1` (`flutter-app`, conditional `google-services.json` Gradle plugin) to validate linting, typechecks, tests, and Android release APK builds on `main`. `docs/SETUP-GUIDE.md` was intentionally omitted per owner instruction, with architecture decisions tracked in `docs/DECISIONS.md`, limits in `docs/LIMITS.md`, and release steps in `docs/RELEASE.md`.
