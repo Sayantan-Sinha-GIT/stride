@@ -3,25 +3,26 @@
 - **Project**: Stride
 - **Objective**: GPS activity tracker, Hausdorff segment competition, and privacy-first social fitness platform (Flutter mobile app + Next.js flagship cinema website + Cloudflare Workers API + Neon PostGIS).
 - **PRD**: PRD.md
-- **Stack**: npm workspaces (`packages/track-engine`, `api` Hono + Cloudflare Workers + Neon Postgres 17 + PostGIS 3.5, `web` Next.js 15 + Tailwind v4 + GSAP + Lenis + Three.js + MapLibre GL, `app` Flutter 3.50.1 Android-first/iOS-ready)
-- **Workflow Status**: READY FOR MY REVIEW
-- **Current Stage**: Stage 5 — Local Verification & Preview
+- **Stack**: npm workspaces (`packages/track-engine`, `api` Hono + Cloudflare Workers + Neon Postgres 17 + PostGIS 3.5, `web` Next.js 15 + Tailwind v4 + GSAP + Lenis + Three.js GLSL + MapLibre GL, `app` Flutter 3.50.1 Android-first/iOS-ready)
+- **Workflow Status**: DEPLOYED
+- **Current Stage**: Stage 7 — Deployed & Live-Verified
 - **Execution Mode**: AUTO
 - **Preview URL**: http://localhost:3000/en
-- **API URL**: http://127.0.0.1:8787
-- **Android APK Artifact**: `app/build/app/outputs/flutter-apk/app-release.apk` (82.3 MB, served locally via `http://localhost:3000/api/download-apk`)
-- **Live URL**: Not deployed
-- **Last Updated**: 2026-11-24 10:47
+- **Live URL**: https://stride-web-two.vercel.app
+- **API URL**: https://stride-api.srimantasutapa123.workers.dev
+- **GitHub Repository**: https://github.com/Sayantan-Sinha-GIT/stride
+- **Android APK Release**: https://github.com/Sayantan-Sinha-GIT/stride/releases/download/v1.0.0/app-release.apk
+- **Last Updated**: 2026-11-24 12:55
 
 ## Completed Requirements
-- **REQ-01..REQ-22**: All 22 checklist requirements implemented and locally verified across track-engine tests (10/10), API Neon PostGIS integration tests (5/5), live Google OAuth Web & Android client config + 302 redirect verification, live Brevo REST API key & verified sender (`srimantasutapa123@gmail.com`) in `api/.dev.vars`, Firebase Android `google-services.json` (`com.stride.tracker` + SHA-1) + Google Services Gradle plugin + Flutter FCM token registration, Next.js production build (27 routes incl. `/api/download-apk`), Chrome DevTools cinema QA (`1440x900` Dark & Light, `768x1024` `/hi`, `390x844` mobile, `/en/download`), AND Flutter 3.50.1 (`flutter analyze` 0 errors/warnings, `flutter test` 3/3 suites, `flutter build apk --release`).
+- **REQ-01..REQ-22**: All 22 checklist requirements implemented, tested across desktop/tablet/mobile (`1440px`, `768px`, `390px`, `140 FPS` mobile scroll probe, `0` broken images, `overflowX: false`), verified on Android 15 Emulator (`dispatch-test`) with live `adb emu geo fix` GPS tracking (`0.16 km`, `3:40 /km`, `6 Pts`) + force-stop crash recovery + Neon sync + bilingual Hindi Settings, and deployed live across Cloudflare Workers (`stride-api`), Vercel (`stride-web`), Neon Postgres 17 + PostGIS 3.5, and GitHub Releases (`v1.0.0`).
 
 ## Remaining Requirements
-- Owner review of local preview at `http://localhost:3000/en` (and `/hi`) including live Google Login, Brevo emails, & `app/build/app/outputs/flutter-apk/app-release.apk`.
-- Production deployment only when explicitly authorized via `DEPLOY MY PROJECT`.
+- None for v1 launch.
 
 ## Known Bugs
 - None open across `/packages/track-engine`, `/api`, `/web`, or `/app`.
 
-## External Blockers
-- Server-side `FCM_PRIVATE_KEY` awaits a 1-click Firebase Admin SDK JSON download from the owner's regular Chrome browser (`https://console.firebase.google.com/project/stride-515703/settings/serviceaccounts/adminsdk`), since the built-in browser sandbox cannot persist downloaded files to disk; `OLA_MAPS_API_KEY` remains optional (OpenFreeMap vector tiles are active).
+## Optional Owner Notes
+- `FCM_PRIVATE_KEY` (optional server-to-device push signing) awaits one-click Firebase Admin SDK JSON download if server push delivery is enabled later (`google-services.json`, `FCM_PROJECT_ID`, and `FCM_CLIENT_EMAIL` are already active).
+- `OLA_MAPS_API_KEY` returned `401` on direct Ola vector style endpoint, so OpenFreeMap dark/light styles remain cleanly active without errors.
