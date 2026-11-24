@@ -11,8 +11,8 @@ id = "5b174c8066bd430c938591b6bf975ead"
 # /v1/admin/cron/heatmap and scheduled GitHub workflows trigger heatmap rebuilds cleanly.
 
 [vars]
-APP_ORIGIN = "https://stride-web-two.vercel.app"
+APP_ORIGIN = "https://stride-web.srimantasutapa123.workers.dev"
 API_ORIGIN = "https://stride-api.srimantasutapa123.workers.dev"
-CORS_ORIGINS = "https://stride-web-two.vercel.app,http://localhost:3000,http://127.0.0.1:3000"
+CORS_ORIGINS = "https://stride-web.srimantasutapa123.workers.dev,http://localhost:3000,http://127.0.0.1:3000"
 BREVO_SENDER_NAME = "Stride"
 BREVO_SENDER_EMAIL = "srimantasutapa123@gmail.com"

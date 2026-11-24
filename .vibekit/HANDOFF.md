@@ -1,10 +1,10 @@
 # Session Handoff — Stride
 
 - **Workflow Status**: `DEPLOYED`
-- **Live Website**: `https://stride-web-two.vercel.app` (English: `/en`, Hindi: `/hi`, Download/QR: `/en/download`)
+- **Live Website (Cloudflare Workers)**: `https://stride-web.srimantasutapa123.workers.dev` (English: `/en`, Hindi: `/hi`, Download/QR: `/en/download`)
 - **Live Workers API**: `https://stride-api.srimantasutapa123.workers.dev` (`/v1/health` connected to Neon `stride` PostGIS 3.5)
+- **Live Android APK Host (Cloudflare Workers)**: `https://stride-apk.srimantasutapa123.workers.dev/stride-android.apk` (also redirected via `https://stride-web.srimantasutapa123.workers.dev/api/download-apk`)
 - **GitHub Repo**: `https://github.com/Sayantan-Sinha-GIT/stride`
-- **Android Release APK (`v1.0.0`)**: `https://github.com/Sayantan-Sinha-GIT/stride/releases/download/v1.0.0/app-release.apk` (connected by default to live Workers API; also reachable via `https://stride-web-two.vercel.app/api/download-apk`)
 - **Demo Accounts**:
   - Demo Athlete: `arjun@stride.demo` / `StrideDemo123!` (or 1-tap Demo Login)
   - Demo Admin / Moderator: `admin@stride.demo` / `StrideAdmin123!`

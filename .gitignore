@@ -13,6 +13,7 @@ out/
 .wrangler/
 .dev.vars
 .dev.vars.*
+apk-host/dist/
 
 # Environment files
 .env
@@ -40,7 +41,6 @@ app/ios/.symlinks/
 *.p12
 
 # IDE & QA scratch
-.vercel
 .qa/
 *APIkey*.txt
 OLAmapsAPIkey.txt
@@ -48,5 +48,3 @@ OLAmapsAPIkey.txt
 Thumbs.db
 *.log
 
-.vercel
-.env*

@@ -1,0 +1,23 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "stride-web",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-01-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "stride-web"
+    }
+  ],
+  "vars": {
+    "NEXT_PUBLIC_API_URL": "https://stride-api.srimantasutapa123.workers.dev",
+    "API_INTERNAL_URL": "https://stride-api.srimantasutapa123.workers.dev",
+    "NEXT_PUBLIC_SITE_URL": "https://stride-web.srimantasutapa123.workers.dev",
+    "NEXT_PUBLIC_APK_DOWNLOAD_URL": "https://stride-apk.srimantasutapa123.workers.dev/stride-android.apk"
+  }
+}
