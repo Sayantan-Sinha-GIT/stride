@@ -1,0 +1,12 @@
+# CLOUDFLARE & BREVO QUICK REFERENCE (When Selected by PRD.md)
+
+## Cloudflare (Pages / Workers / D1 / R2)
+- Choose Pages Git integration (auto-deploy on push) vs. Direct Upload (`wrangler pages deploy`) early; Direct Upload projects cannot convert to Git integration later.
+- Store server secrets via `wrangler secret put` or the Pages/Workers dashboard—never in client bundles.
+
+## Brevo (Transactional Email)
+- Prefer Brevo HTTP API (`POST https://api.brevo.com/v3/smtp/email` with `api-key` header) on serverless/edge runtimes, or SMTP relay where appropriate.
+- Dashboard paths:
+  - Verify Sender: **Settings > Senders, Domains, IPs > Senders > Add a sender**.
+  - API Key: **Settings > SMTP & API > API Keys & MCP > Generate API key**.
+- Ask the owner for at most one setup step at a time and test delivery to an authorized address.

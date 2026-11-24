@@ -1,0 +1,47 @@
+# Dependencies & build artifacts
+node_modules/
+.pnp
+.pnp.js
+dist/
+build/
+coverage/
+
+# Next.js / OpenNext / Cloudflare
+.next/
+out/
+.open-next/
+.wrangler/
+.dev.vars
+.dev.vars.*
+
+# Environment files
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Flutter / Dart / Mobile
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/.packages
+app/build/
+app/android/.gradle/
+app/android/local.properties
+app/android/key.properties
+app/android/app/google-services.json
+app/ios/Pods/
+app/ios/.symlinks/
+*.keystore
+*.jks
+*.pem
+*.p12
+
+# IDE & QA scratch
+.vercel
+.qa/
+.DS_Store
+Thumbs.db
+*.log

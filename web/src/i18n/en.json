@@ -1,0 +1,85 @@
+{
+  "brand": "Stride",
+  "tagline": "Deterministic GPS Telemetry & Athletic Competition",
+  "nav": {
+    "explore": "Explore",
+    "feed": "Feed",
+    "record": "Record / Import",
+    "segments": "Segments",
+    "routes": "Routes",
+    "clubs": "Clubs",
+    "challenges": "Challenges",
+    "dashboard": "Dashboard",
+    "heatmap": "Heatmap",
+    "download": "App",
+    "settings": "Settings",
+    "admin": "Admin",
+    "login": "Sign In",
+    "signup": "Join Free",
+    "logout": "Sign Out"
+  },
+  "theme": {
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System"
+  },
+  "hero": {
+    "eyebrow": "GPS Precision • Privacy First • Zero AI Fluff",
+    "title": "Every kilometer measured true. Every road earned.",
+    "subtitle": "Record runs, rides, and walks offline-first on mobile or import GPX routes. Compete on verified road segments, protect home coordinates with server-side privacy zones, and train across India in English & हिन्दी.",
+    "ctaPrimary": "Launch Live Feed",
+    "ctaRecord": "Record / Import GPX",
+    "ctaDemo": "1-Click Demo Athlete",
+    "ctaAdmin": "Demo Moderator",
+    "capabilitiesTitle": "Core Platform Capabilities",
+    "cap1Title": "Deterministic Track Engine",
+    "cap1Desc": "Haversine geodesic splits, 3m hysteresis elevation smoothing, and corner-preserving GPS filtering.",
+    "cap2Title": "Hausdorff Segment Matching",
+    "cap2Desc": "Directional entry/exit timestamp interpolation (<1s accuracy), shortcut rejection, and fairness flags.",
+    "cap3Title": "Server-Enforced Privacy Zones",
+    "cap3Desc": "Automatic coordinate clipping inside home/work radii before any route or heatmap leaves the server.",
+    "cap4Title": "Community, Clubs & Heatmaps",
+    "cap4Desc": "Clubs, monthly endurance challenges, personal records, gear mileage, and >=3 contributor city heatmaps."
+  },
+  "metrics": {
+    "distance": "Distance",
+    "movingTime": "Moving Time",
+    "elapsedTime": "Elapsed",
+    "pace": "Avg Pace",
+    "speed": "Avg Speed",
+    "elevation": "Elevation Gain",
+    "calories": "Est. Calories",
+    "caloriesNote": "MET-based estimate only; not medical advice",
+    "kudos": "Kudos",
+    "comments": "Comments",
+    "efforts": "Efforts"
+  },
+  "sports": {
+    "all": "All Sports",
+    "run": "Run",
+    "ride": "Ride",
+    "walk": "Walk",
+    "hike": "Hike"
+  },
+  "privacy": {
+    "clippedBadge": "Privacy Zone Applied",
+    "visibilityPublic": "Public",
+    "visibilityFollowers": "Followers Only",
+    "visibilityPrivate": "Only Me"
+  },
+  "common": {
+    "loading": "Loading telemetry...",
+    "empty": "No records found yet.",
+    "error": "Something went wrong. Please retry.",
+    "notFound": "Record not found.",
+    "save": "Save Changes",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "create": "Create",
+    "search": "Search athletes, segments, or cities",
+    "viewAll": "View All",
+    "back": "Back",
+    "hindiSwitch": "हिन्दी",
+    "englishSwitch": "English"
+  }
+}

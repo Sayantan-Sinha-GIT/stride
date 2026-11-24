@@ -1,0 +1,27 @@
+{
+  "description": "Shared deterministic GPS test vectors verified by both TypeScript (@stride/track-engine) and Dart (app/test/track_processor_test.dart).",
+  "cubbon5k": {
+    "activityType": "run",
+    "startLat": 12.9762,
+    "startLng": 77.5929,
+    "stepMeters": 50,
+    "steps": 100,
+    "secondsPerStep": 15,
+    "expectedMinDistanceM": 4950,
+    "expectedMaxDistanceM": 5050,
+    "expectedElapsedS": 1500
+  },
+  "noisySpike": {
+    "activityType": "run",
+    "points": [
+      { "lat": 12.9762, "lng": 77.5929, "ele": 920, "time": 1700000000000, "accuracyM": 8 },
+      { "lat": 12.97665, "lng": 77.5929, "ele": 921, "time": 1700000010000, "accuracyM": 7 },
+      { "lat": 12.9771, "lng": 77.5929, "ele": 950, "time": 1700000020000, "accuracyM": 95 },
+      { "lat": 13.02, "lng": 77.65, "ele": 922, "time": 1700000025000, "accuracyM": 10 },
+      { "lat": 12.97755, "lng": 77.5929, "ele": 923, "time": 1700000030000, "accuracyM": 8 },
+      { "lat": 12.978, "lng": 77.5929, "ele": 924, "time": 1700000040000, "accuracyM": 8 }
+    ],
+    "expectedKeptCount": 4,
+    "expectedDroppedCount": 2
+  }
+}

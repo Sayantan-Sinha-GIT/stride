@@ -1,0 +1,19 @@
+# PLAYBOOK.TXT — VibeKit Universal Execution Guide (Legacy Bridge)
+# Canonical architecture lives in AGENTS.md, core/, and skills/.
+
+## 1. Philosophy
+- Priority: Explicit current request > Project PRD (`PRD.md` / `PRD.txt`) > `core/RULES.md`, `UI-UX Preferences.txt` & `core/UI_UX_PREFERENCES.md` (the owner's UI/UX preferences are mandatory across all builds, overhauls, feature work, and UI/UX improvements, and shall ONLY be ignored when the PRD explicitly mentions a simplistic UI/UX).
+- Speak concisely in plain English with the owner; spend effort on real working code, visual craft, and honest verification.
+
+## 2. Owner Lifecycle (`BUILD -> REVIEW/REVISE -> DEPLOY`)
+- **Stages 0–2 (Auto-Setup, Understand, Plan, Design Direction)**: Ensure VibeKit is installed locally (`~/.vibekit/kit-path.txt` if missing), inspect the PRD and repo manifests (`core/STACK_DETECTION.md`), create `CHECKLIST.md` (`REQ-*` items), `.vibekit/DECISIONS.md`, and `.vibekit/STATE.md` (`Workflow Status: BUILDING`).
+- **Stage 3 (Core Build)**: Build real working vertical slices across frontend, state, APIs, auth, persistence, and providers (`skills/provider-onboarding/SKILL.md`). Zero dead buttons or fake success states.
+- **Stage 4 (Design Refinement)**: Apply `UI-UX Preferences.txt` and `core/UI_UX_PREFERENCES.md` in full (ignoring them ONLY when the PRD explicitly mentions a simplistic UI/UX), crisp `1440px–1920px` desktop + `390px` mobile proportions, bold choreographed motion (`skills/cinematic-web-motion/SKILL.md`), convincing real 3D if promised, and visual verification (`skills/browser-verification/SKILL.md`).
+- **Stage 5 (Local Verification & Preview — CRITICAL DEFAULT STOP)**: Run stack checks, update `QUALITY_CASES.md` and `.vibekit/STATE.md` (`Workflow Status: READY FOR MY REVIEW`), start the local preview server, ask the owner to review and point them to `DEPLOY MY PROJECT` in `START_HERE.txt`, and **STOP**.
+- **Review/Revise (`REVISING` -> `READY FOR MY REVIEW`)**: Apply requested features, bug fixes, or design improvements while preserving working features and continuing to stop at local preview.
+- **Stages 6–7 (`DEPLOY MY PROJECT` — Unified Readiness & Deployment)**: Run production build, regression tests, security audit (`skills/security-audit/SKILL.md`), env validation, and `./CHECK_QUALITY_CASES.ps1 -Mode Release` (fixing issues first), then deploy to the PRD-specified host (`skills/deployment/SKILL.md`), verify live revision & live flows, and set `Workflow Status: DEPLOYED`.
+
+## 3. Optional Legacy 3-Step Mapping
+- Step 1 (`@workhorse` / `@flash-workhorse`) -> Stages 0–3 + Stage 5 preview stop (`skills/build-from-prd/SKILL.md`).
+- Step 2 (`@ui-beautifier`) -> Stage 4 UI/UX audit & elevation + Stage 5 preview stop (`skills/quality-audit/SKILL.md`, `skills/frontend-design/SKILL.md`).
+- Step 3 (`@qa-surgeon`) -> Unified `DEPLOY MY PROJECT` (`PROMPT 2`: Stage 6 readiness + Stage 7 authorized deployment).

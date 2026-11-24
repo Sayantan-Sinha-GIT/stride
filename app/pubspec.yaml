@@ -1,0 +1,38 @@
+name: stride
+description: Stride GPS Activity Tracker & Athletic Competition App (Android-first, iOS-ready).
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.3
+  dio: ^5.8.0
+  flutter_riverpod: ^2.6.1
+  flutter_secure_storage: ^11.2.0
+  geolocator: ^13.0.2
+  flutter_foreground_task: ^8.17.0
+  sqflite: ^2.4.1
+  path_provider: ^2.1.5
+  path: ^1.9.1
+  maplibre_gl: ^0.28.0
+  google_sign_in: ^6.2.2
+  firebase_core: ^3.12.1
+  firebase_messaging: ^15.2.4
+  permission_handler: ^11.4.0
+  uuid: ^4.5.1
+  file_picker: ^13.4.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  generate: true

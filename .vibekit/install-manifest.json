@@ -1,0 +1,485 @@
+{
+    "kitVersion":  "2.0.0",
+    "installedAt":  "2026-11-22T13:45:30.6135111+05:30",
+    "kitSource":  "VibeKit",
+    "adapters":  [
+                     "all"
+                 ],
+    "files":  [
+                  {
+                      "path":  "core/CAPABILITIES.md",
+                      "mode":  "owned",
+                      "sha256":  "0d3bb080f6021852e9df18daec9c52b957d2eafa94ffd94f9a39be06e38c9e81"
+                  },
+                  {
+                      "path":  "core/QUALITY_STANDARD.md",
+                      "mode":  "owned",
+                      "sha256":  "e9c3248dccd8c38a901642c84377bcf239cfa07e0ad53179d2b4148f36f58d36"
+                  },
+                  {
+                      "path":  "core/RULES.md",
+                      "mode":  "owned",
+                      "sha256":  "4472d1c45be900e60182ed92091444ec37a2671aaf2e1bc1dee42b0d20e84fd3"
+                  },
+                  {
+                      "path":  "core/SECURITY.md",
+                      "mode":  "owned",
+                      "sha256":  "71f2d7d85923db061ade5bf6b847d1115b559f4476183c566e4207e2fb91a9cb"
+                  },
+                  {
+                      "path":  "core/STACK_DETECTION.md",
+                      "mode":  "owned",
+                      "sha256":  "8b304d1ef56746d011719982796108e4599f30b6914af7acb5902b0ff533719c"
+                  },
+                  {
+                      "path":  "core/STATE_PROTOCOL.md",
+                      "mode":  "owned",
+                      "sha256":  "f5b8353029f7bf7786ed38aa519340e76a1e6988370c54dc4a9c10a83e21414d"
+                  },
+                  {
+                      "path":  "core/UI_UX_PREFERENCES.md",
+                      "mode":  "owned",
+                      "sha256":  "d3546da70951bc6209c276b193fe47ffc54e4cbf233f8fe7f735c7223e7bd026"
+                  },
+                  {
+                      "path":  "core/WORKFLOW.md",
+                      "mode":  "owned",
+                      "sha256":  "a0d01643803b03105ab6835b5e8f6a2b2dab21ac5e505ed1b4acdeb3e671a17e"
+                  },
+                  {
+                      "path":  "core/roles/architect-lead.md",
+                      "mode":  "owned",
+                      "sha256":  "6f1184b5947c19ce87ed73f7eaf850a130766d4651ab00564145a0da233b3be4"
+                  },
+                  {
+                      "path":  "core/roles/backend-engineer.md",
+                      "mode":  "owned",
+                      "sha256":  "16db31b78ec5fa134bc11e1f19d61176b2e1e89960c70c9303eb9fb730b6265b"
+                  },
+                  {
+                      "path":  "core/roles/creative-director.md",
+                      "mode":  "owned",
+                      "sha256":  "4f604cf5a8c699b46c9e707ee3d1ad8211ca74406798b7db2d5448f3589bab1b"
+                  },
+                  {
+                      "path":  "core/roles/product-engineer.md",
+                      "mode":  "owned",
+                      "sha256":  "b2c978ae1f227323212257dd34322e6fa1bd51db86d4df4740b438b1a4d14e98"
+                  },
+                  {
+                      "path":  "core/roles/qa-reviewer.md",
+                      "mode":  "owned",
+                      "sha256":  "cc3b039abd072dbcb17c756da7ca2f4b07c1eb66052681a483a54254cce6ed86"
+                  },
+                  {
+                      "path":  "core/roles/release-security.md",
+                      "mode":  "owned",
+                      "sha256":  "8988caf147a076b3b50592e0e6c6e1d35bea8d3733dd813662d7376411416ce8"
+                  },
+                  {
+                      "path":  "skills/backend-engineering/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "152d1e1a844fe62524bbd7cdcdb57ab31aa7fdb39057eb3f715351009e3be835"
+                  },
+                  {
+                      "path":  "skills/browser-verification/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "2d69c05cc82d906dea84fdcb3d2ea70f05f370e404ac7abbc72fb3400f464f61"
+                  },
+                  {
+                      "path":  "skills/build-from-prd/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "ddf0fcb0d14ff240d41c3096f82d80d146bc818ff77d04fe1c6df2c6f2ce4951"
+                  },
+                  {
+                      "path":  "skills/chrome-devtools/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "f18e8728e6f1630c02ae20dfd6541224f1da8dc43f63db183c72326fcf315237"
+                  },
+                  {
+                      "path":  "skills/cinematic-web-motion/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "03eee5e2bc92f63c3bd32e8a79d3e58093204b3f42f26530ee343bd7b1cf0c45"
+                  },
+                  {
+                      "path":  "skills/cloud-service-recovery/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "c9fb2220565ca5b94bcba3dc4c3adee6cfc73f39fd9d55af2af6ace2d7b8cca2"
+                  },
+                  {
+                      "path":  "skills/debugging/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "4881041a6184d803fdf3ac1b89142a651d61ed9eb76183f1a52247d037784da0"
+                  },
+                  {
+                      "path":  "skills/deployment/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "143162ea50849e5b3a6d18afa392fdec3ec777137d003ecc78877aadf99b5c58"
+                  },
+                  {
+                      "path":  "skills/feature-development/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "36a28bc4caeb24b8360d270e591732ea1c0705374bee91fe971925ede872f284"
+                  },
+                  {
+                      "path":  "skills/frontend-design/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "85905f2fbfafa32e3b5a05b7573edc7d1cf751e81a43b46fec8ec949e4eece83"
+                  },
+                  {
+                      "path":  "skills/github-deploy-debug/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "02eb86e82e27626d20ab20449a318aaead93a6826debc19677c5f04b0d69364f"
+                  },
+                  {
+                      "path":  "skills/improve-prd/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "63b3966c6633265cc127a4ff267938561629e66a62dd9127d7eed2c28e836d85"
+                  },
+                  {
+                      "path":  "skills/production-readiness/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "124b437d16cbad5ecd5b29ddb29821c1c1f584b7cdd2f1f177fd301b2f2e3fdf"
+                  },
+                  {
+                      "path":  "skills/project-planning/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "d84d81ae6f6633a5cb3e89dbb1e580e7adaaf44c4d2848b2419a310563bd8e42"
+                  },
+                  {
+                      "path":  "skills/project-resume/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "0c993d669c48b9d36c56d242df9568e201bd452f9a1f4b84c83971ab3189f243"
+                  },
+                  {
+                      "path":  "skills/provider-onboarding/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "6625000161fff9a8349636d292f950a438d04b6162b0139b559b47df5bdddb1b"
+                  },
+                  {
+                      "path":  "skills/provider-onboarding/references/cloudflare-brevo.txt",
+                      "mode":  "owned",
+                      "sha256":  "96f2874804c6250eab36438b9636ba557fff0629ec75135e83f77ee29e487ed0"
+                  },
+                  {
+                      "path":  "skills/quality-audit/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "86a7e1f1be6a63dc2187aa150dbaa07b40402ebf2659c15a7960e357e72fee96"
+                  },
+                  {
+                      "path":  "skills/reference-ui-analysis/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "934958d16ea35b23c3c6d1a041755003eb2b0d5695d34b78e80c3d1b6cb08343"
+                  },
+                  {
+                      "path":  "skills/reference-ui-analysis/references/browser-layout-probe.js",
+                      "mode":  "owned",
+                      "sha256":  "246759d2ad31bf6749a4668b3e977129ce64df1ca5eb728ce8c804867a5140ff"
+                  },
+                  {
+                      "path":  "skills/security-audit/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "887d79b5e132181db358a18425fba8770df1a973c23d5403d66752c19114982f"
+                  },
+                  {
+                      "path":  "skills/sell-ready-website/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "09a6db28640a3a71d5c01d274e1c236dfb0031e7df18a5f38d0ac63f4caafc32"
+                  },
+                  {
+                      "path":  "CHECK_QUALITY_CASES.ps1",
+                      "mode":  "owned",
+                      "sha256":  "ff598219b7aae78e45428041e33c95147dd95e1e3a05f983275fc6bde429f30a"
+                  },
+                  {
+                      "path":  "GLOBAL_RULE.txt",
+                      "mode":  "owned",
+                      "sha256":  "42e65aa3941d2208cbe0d4d430762e150a4c06e4b55df779359c9575772a8fe5"
+                  },
+                  {
+                      "path":  "PLAYBOOK.txt",
+                      "mode":  "owned",
+                      "sha256":  "208ad3c74d8d34605a06d19a780aee57f3ef35ef1b00f293237962d17b38c978"
+                  },
+                  {
+                      "path":  "UI-UX Preferences.txt",
+                      "mode":  "owned",
+                      "sha256":  "3c8d23127ea32e4b4c30a30e0ea7f0a36084bad2ec5eb29ae8b9ac3a8bab7fea"
+                  },
+                  {
+                      "path":  "scripts/validation/check-quality.mjs",
+                      "mode":  "owned",
+                      "sha256":  "405fedf451a1720e9baea5aaa9babf0b245934a115be75fc22c197865f6050b1"
+                  },
+                  {
+                      "path":  "AGENTS.md",
+                      "mode":  "owned",
+                      "sha256":  "89322f2035e880d4c7972dc610a8c0097bb3d7a5c5937bad52be870860d1019b"
+                  },
+                  {
+                      "path":  "GEMINI.md",
+                      "mode":  "owned",
+                      "sha256":  "15e0fe8eb8efa104a04730a9606d7398074ed177187c19e92a0fe34b103f8209"
+                  },
+                  {
+                      "path":  ".agents/skills.json",
+                      "mode":  "owned",
+                      "sha256":  "8de88f1d52a63cd6cad11e86ea75660aabfcfa5c7ad8e12203a0aee37d8d2e53"
+                  },
+                  {
+                      "path":  ".agents/agents/flash-workhorse.md",
+                      "mode":  "owned",
+                      "sha256":  "41ea2b4605966b0acdc418c0879a93c0f44ac91d20a91aa19d15d20ee5e5cc3f"
+                  },
+                  {
+                      "path":  ".agents/agents/qa-surgeon.md",
+                      "mode":  "owned",
+                      "sha256":  "5527e9897aabcf7eeb8346cab5ee4f07091a56f3ac001133736ece8989dc9768"
+                  },
+                  {
+                      "path":  ".agents/agents/ui-beautifier.md",
+                      "mode":  "owned",
+                      "sha256":  "eaa98fb1e9677bb4ea6160ba21653270c17fb3e05b4e1f93ed7951f5c22ee50d"
+                  },
+                  {
+                      "path":  ".agents/agents/workhorse.md",
+                      "mode":  "owned",
+                      "sha256":  "cdd1aaa6c3719a4a50ca32c51200e383f29d2b1768d7157babe066fd198a5611"
+                  },
+                  {
+                      "path":  ".agents/skills/backend-engineering/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "152d1e1a844fe62524bbd7cdcdb57ab31aa7fdb39057eb3f715351009e3be835"
+                  },
+                  {
+                      "path":  ".agents/skills/browser-verification/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "2d69c05cc82d906dea84fdcb3d2ea70f05f370e404ac7abbc72fb3400f464f61"
+                  },
+                  {
+                      "path":  ".agents/skills/build-from-prd/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "ddf0fcb0d14ff240d41c3096f82d80d146bc818ff77d04fe1c6df2c6f2ce4951"
+                  },
+                  {
+                      "path":  ".agents/skills/chrome-devtools/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "f18e8728e6f1630c02ae20dfd6541224f1da8dc43f63db183c72326fcf315237"
+                  },
+                  {
+                      "path":  ".agents/skills/cinematic-web-motion/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "03eee5e2bc92f63c3bd32e8a79d3e58093204b3f42f26530ee343bd7b1cf0c45"
+                  },
+                  {
+                      "path":  ".agents/skills/cloud-service-recovery/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "c9fb2220565ca5b94bcba3dc4c3adee6cfc73f39fd9d55af2af6ace2d7b8cca2"
+                  },
+                  {
+                      "path":  ".agents/skills/debugging/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "4881041a6184d803fdf3ac1b89142a651d61ed9eb76183f1a52247d037784da0"
+                  },
+                  {
+                      "path":  ".agents/skills/deployment/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "143162ea50849e5b3a6d18afa392fdec3ec777137d003ecc78877aadf99b5c58"
+                  },
+                  {
+                      "path":  ".agents/skills/feature-development/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "36a28bc4caeb24b8360d270e591732ea1c0705374bee91fe971925ede872f284"
+                  },
+                  {
+                      "path":  ".agents/skills/frontend-design/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "85905f2fbfafa32e3b5a05b7573edc7d1cf751e81a43b46fec8ec949e4eece83"
+                  },
+                  {
+                      "path":  ".agents/skills/github-deploy-debug/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "02eb86e82e27626d20ab20449a318aaead93a6826debc19677c5f04b0d69364f"
+                  },
+                  {
+                      "path":  ".agents/skills/improve-prd/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "63b3966c6633265cc127a4ff267938561629e66a62dd9127d7eed2c28e836d85"
+                  },
+                  {
+                      "path":  ".agents/skills/production-readiness/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "124b437d16cbad5ecd5b29ddb29821c1c1f584b7cdd2f1f177fd301b2f2e3fdf"
+                  },
+                  {
+                      "path":  ".agents/skills/project-planning/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "d84d81ae6f6633a5cb3e89dbb1e580e7adaaf44c4d2848b2419a310563bd8e42"
+                  },
+                  {
+                      "path":  ".agents/skills/project-resume/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "0c993d669c48b9d36c56d242df9568e201bd452f9a1f4b84c83971ab3189f243"
+                  },
+                  {
+                      "path":  ".agents/skills/provider-onboarding/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "6625000161fff9a8349636d292f950a438d04b6162b0139b559b47df5bdddb1b"
+                  },
+                  {
+                      "path":  ".agents/skills/provider-onboarding/references/cloudflare-brevo.txt",
+                      "mode":  "owned",
+                      "sha256":  "96f2874804c6250eab36438b9636ba557fff0629ec75135e83f77ee29e487ed0"
+                  },
+                  {
+                      "path":  ".agents/skills/quality-audit/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "86a7e1f1be6a63dc2187aa150dbaa07b40402ebf2659c15a7960e357e72fee96"
+                  },
+                  {
+                      "path":  ".agents/skills/reference-ui-analysis/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "934958d16ea35b23c3c6d1a041755003eb2b0d5695d34b78e80c3d1b6cb08343"
+                  },
+                  {
+                      "path":  ".agents/skills/reference-ui-analysis/references/browser-layout-probe.js",
+                      "mode":  "owned",
+                      "sha256":  "246759d2ad31bf6749a4668b3e977129ce64df1ca5eb728ce8c804867a5140ff"
+                  },
+                  {
+                      "path":  ".agents/skills/security-audit/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "887d79b5e132181db358a18425fba8770df1a973c23d5403d66752c19114982f"
+                  },
+                  {
+                      "path":  ".agents/skills/sell-ready-website/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "09a6db28640a3a71d5c01d274e1c236dfb0031e7df18a5f38d0ac63f4caafc32"
+                  },
+                  {
+                      "path":  "CLAUDE.md",
+                      "mode":  "owned",
+                      "sha256":  "079f257f4fe03aaeb031a70fb3896d677fa4e8b27c0d039fc99678b6e9855619"
+                  },
+                  {
+                      "path":  ".claude/skills/backend-engineering/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "152d1e1a844fe62524bbd7cdcdb57ab31aa7fdb39057eb3f715351009e3be835"
+                  },
+                  {
+                      "path":  ".claude/skills/browser-verification/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "2d69c05cc82d906dea84fdcb3d2ea70f05f370e404ac7abbc72fb3400f464f61"
+                  },
+                  {
+                      "path":  ".claude/skills/build-from-prd/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "ddf0fcb0d14ff240d41c3096f82d80d146bc818ff77d04fe1c6df2c6f2ce4951"
+                  },
+                  {
+                      "path":  ".claude/skills/chrome-devtools/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "f18e8728e6f1630c02ae20dfd6541224f1da8dc43f63db183c72326fcf315237"
+                  },
+                  {
+                      "path":  ".claude/skills/cinematic-web-motion/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "03eee5e2bc92f63c3bd32e8a79d3e58093204b3f42f26530ee343bd7b1cf0c45"
+                  },
+                  {
+                      "path":  ".claude/skills/cloud-service-recovery/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "c9fb2220565ca5b94bcba3dc4c3adee6cfc73f39fd9d55af2af6ace2d7b8cca2"
+                  },
+                  {
+                      "path":  ".claude/skills/debugging/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "4881041a6184d803fdf3ac1b89142a651d61ed9eb76183f1a52247d037784da0"
+                  },
+                  {
+                      "path":  ".claude/skills/deployment/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "143162ea50849e5b3a6d18afa392fdec3ec777137d003ecc78877aadf99b5c58"
+                  },
+                  {
+                      "path":  ".claude/skills/feature-development/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "36a28bc4caeb24b8360d270e591732ea1c0705374bee91fe971925ede872f284"
+                  },
+                  {
+                      "path":  ".claude/skills/frontend-design/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "85905f2fbfafa32e3b5a05b7573edc7d1cf751e81a43b46fec8ec949e4eece83"
+                  },
+                  {
+                      "path":  ".claude/skills/github-deploy-debug/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "02eb86e82e27626d20ab20449a318aaead93a6826debc19677c5f04b0d69364f"
+                  },
+                  {
+                      "path":  ".claude/skills/improve-prd/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "63b3966c6633265cc127a4ff267938561629e66a62dd9127d7eed2c28e836d85"
+                  },
+                  {
+                      "path":  ".claude/skills/production-readiness/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "124b437d16cbad5ecd5b29ddb29821c1c1f584b7cdd2f1f177fd301b2f2e3fdf"
+                  },
+                  {
+                      "path":  ".claude/skills/project-planning/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "d84d81ae6f6633a5cb3e89dbb1e580e7adaaf44c4d2848b2419a310563bd8e42"
+                  },
+                  {
+                      "path":  ".claude/skills/project-resume/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "0c993d669c48b9d36c56d242df9568e201bd452f9a1f4b84c83971ab3189f243"
+                  },
+                  {
+                      "path":  ".claude/skills/provider-onboarding/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "6625000161fff9a8349636d292f950a438d04b6162b0139b559b47df5bdddb1b"
+                  },
+                  {
+                      "path":  ".claude/skills/provider-onboarding/references/cloudflare-brevo.txt",
+                      "mode":  "owned",
+                      "sha256":  "96f2874804c6250eab36438b9636ba557fff0629ec75135e83f77ee29e487ed0"
+                  },
+                  {
+                      "path":  ".claude/skills/quality-audit/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "86a7e1f1be6a63dc2187aa150dbaa07b40402ebf2659c15a7960e357e72fee96"
+                  },
+                  {
+                      "path":  ".claude/skills/reference-ui-analysis/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "934958d16ea35b23c3c6d1a041755003eb2b0d5695d34b78e80c3d1b6cb08343"
+                  },
+                  {
+                      "path":  ".claude/skills/reference-ui-analysis/references/browser-layout-probe.js",
+                      "mode":  "owned",
+                      "sha256":  "246759d2ad31bf6749a4668b3e977129ce64df1ca5eb728ce8c804867a5140ff"
+                  },
+                  {
+                      "path":  ".claude/skills/security-audit/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "887d79b5e132181db358a18425fba8770df1a973c23d5403d66752c19114982f"
+                  },
+                  {
+                      "path":  ".claude/skills/sell-ready-website/SKILL.md",
+                      "mode":  "owned",
+                      "sha256":  "09a6db28640a3a71d5c01d274e1c236dfb0031e7df18a5f38d0ac63f4caafc32"
+                  },
+                  {
+                      "path":  ".cursor/rules/vibekit.mdc",
+                      "mode":  "owned",
+                      "sha256":  "f430c8377411ff6b00f5ab20f6016a0b212d4ac48eea4c565effc67891b2bb59"
+                  },
+                  {
+                      "path":  ".github/copilot-instructions.md",
+                      "mode":  "owned",
+                      "sha256":  "b129b3feb172956685e0daabcde4837d65f3c2996111e09bb742eac408c5a1f3"
+                  }
+              ]
+}
