@@ -1,0 +1,27 @@
+MY UI/UX PREFERENCES
+
+This describes my taste, not a template, implementation recipe, or fixed design system. I want an agent to understand the level of ambition I enjoy and then bring its own creativity. Different products can deserve different visual languages.
+
+OVERALL FEEL
+I gravitate toward artistic, expressive, premium interfaces that feel like a high-budget advertisement or a flagship interactive experience. "Fancy" and "aesthetic" mean something memorable, richly composed, and alive to me. A restrained, very clean, almost static landing page usually feels underwhelming for the promotional websites I have in mind.
+
+DENSITY AND COMPOSITION
+I prefer substantial visual presence and relatively little unused space. Large empty heroes, long blank gaps, and motionless backgrounds tend to disappoint me. Layered imagery, interesting backgrounds, depth, and purposeful detail appeal to me. Density should still feel composed: readable text, clear hierarchy, and obvious actions matter more than filling every pixel. Fancy does not mean oversized headings, bloated cards, or awkward desktop proportions.
+
+MOTION
+I enjoy bold, immediately noticeable animation, including during ordinary scrolling. Effects that appear only after clicking, or tiny shifts that are barely visible, do not deliver the experience I am looking for. I like motion that changes composition, depth, scale, perspective, or the relationship between elements as I move through a page. An animated background can help the whole experience feel alive. These are possibilities, not a required list of effects. Original choreography matters more than piling on random animation. Readability, direct interaction, smooth performance, and comfortable reduced-motion options still matter.
+
+ORIGINALITY AND REFERENCES
+My CodeSense (pr-reviewer) and Haan projects illustrate the level of animation, richness, and polish that excites me. They are references for ambition, not templates to reproduce. I want new ideas rather than copied animations, compositions, motifs, or branding. I am open to unexpected typography, color, materials, imagery, and interaction ideas when they form a coherent whole. I do not have one mandatory palette, font, layout, framework, or animation technique for every project.
+
+DISCOVERABILITY AND THEMES
+I want to understand a product's main capabilities quickly. If it offers several equally important categories, an opening that makes it appear to offer only one feels misleading. I dislike having to toggle through hidden alternatives merely to discover the product's breadth. I often enjoy rich dark aesthetics and appreciate a thoughtful light/dark choice, with consistent contrast and legibility throughout.
+
+3D AND SPATIAL INTERACTION
+When 3D is part of a product's promise, I expect recognizable, convincing models and useful camera framing. A plane should look like a plane, and individual seats should be easy to distinguish and select. Zooming, moving around, and seeing relevant details should feel intuitive. In TicketRaja, real 3D is central; an automatic switch to a flat or Lite experience feels like losing the feature. This does not mean that every future project needs 3D.
+
+MOBILE APPS
+I want the polish and reliability of a serious consumer app such as BookMyShow. A phone app can have less animation than its promotional website, with more emphasis on speed, clear navigation, readable content, comfortable touch targets, and dependable task completion. Subtle mobile feedback can be excellent; distracting motion that delays an action is less appealing. Mobile deserves its own thoughtful design rather than a compressed promotional page.
+
+FINISH AND CREATIVE FREEDOM
+I notice obvious defects quickly: overlapping text, clipped controls, missing model parts, confusing interactions, and features that look finished but do not work. I value consistency across screens, screen sizes, themes, and interaction states. The aim is a complete, usable experience with a strong personality. These preferences describe the experience I enjoy; they leave room for an agent to invent a different and better solution for the product in front of it.

@@ -1,0 +1,83 @@
+/* Stride Centralized Design System Tokens
+ * Edit only this file to re-skin Stride across every route, component, and theme.
+ */
+
+:root,
+html[data-theme='dark'] {
+  --stride-bg-canvas: #06090d;
+  --stride-bg-elevated: #0d131a;
+  --stride-bg-surface: #121923;
+  --stride-bg-surface-hover: #192230;
+  --stride-bg-glass: rgba(11, 16, 23, 0.82);
+  --stride-border-subtle: rgba(255, 255, 255, 0.09);
+  --stride-border-strong: rgba(255, 255, 255, 0.22);
+
+  --stride-text-primary: #f5f7fa;
+  --stride-text-secondary: #a4b2c5;
+  --stride-text-muted: #76879d;
+
+  --stride-accent: #ff4d1c;
+  --stride-accent-hover: #ff6a3e;
+  --stride-accent-gold: #f5a623;
+  --stride-accent-fg: #ffffff;
+  --stride-accent-tint: rgba(255, 77, 28, 0.14);
+
+  --stride-success: #18b87a;
+  --stride-warning: #f59e0b;
+  --stride-danger: #ef4444;
+  --stride-info: #38bdf8;
+
+  --stride-grid-line: rgba(255, 255, 255, 0.042);
+  --stride-contour-stroke: rgba(255, 77, 28, 0.24);
+  --stride-shadow-card: 0 18px 44px -22px rgba(0, 0, 0, 0.88);
+  --stride-shadow-deep: 0 36px 90px -24px rgba(0, 0, 0, 0.92), 0 8px 24px -10px rgba(0, 0, 0, 0.72);
+  --stride-shadow-glow: 0 0 60px -12px rgba(255, 77, 28, 0.36);
+  --stride-surface-sheen: linear-gradient(145deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.015) 45%, rgba(255, 77, 28, 0.03) 100%);
+  --stride-vignette-bottom: linear-gradient(to bottom, rgba(6, 9, 13, 0.16) 0%, rgba(6, 9, 13, 0.56) 52%, #06090d 100%);
+  --stride-glass-border: rgba(255, 255, 255, 0.16);
+  --stride-chapter-ink: rgba(255, 255, 255, 0.065);
+  color-scheme: dark;
+}
+
+html[data-theme='light'] {
+  --stride-bg-canvas: #f4f3ef;
+  --stride-bg-elevated: #ffffff;
+  --stride-bg-surface: #ffffff;
+  --stride-bg-surface-hover: #eceae3;
+  --stride-bg-glass: rgba(255, 255, 255, 0.86);
+  --stride-border-subtle: rgba(12, 18, 25, 0.1);
+  --stride-border-strong: rgba(12, 18, 25, 0.22);
+
+  --stride-text-primary: #0c1219;
+  --stride-text-secondary: #394657;
+  --stride-text-muted: #566477;
+
+  --stride-accent: #c9340b;
+  --stride-accent-hover: #ac2a07;
+  --stride-accent-gold: #c97a06;
+  --stride-accent-fg: #ffffff;
+  --stride-accent-tint: rgba(201, 52, 11, 0.11);
+
+  --stride-success: #0d8a59;
+  --stride-warning: #b45309;
+  --stride-danger: #dc2626;
+  --stride-info: #0284c7;
+
+  --stride-grid-line: rgba(12, 18, 25, 0.055);
+  --stride-contour-stroke: rgba(201, 52, 11, 0.18);
+  --stride-shadow-card: 0 16px 36px -20px rgba(12, 18, 25, 0.15);
+  --stride-shadow-deep: 0 28px 65px -24px rgba(12, 18, 25, 0.22), 0 8px 20px -10px rgba(12, 18, 25, 0.12);
+  --stride-shadow-glow: 0 0 48px -12px rgba(201, 52, 11, 0.24);
+  --stride-surface-sheen: linear-gradient(145deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.65) 55%, rgba(201, 52, 11, 0.03) 100%);
+  --stride-vignette-bottom: linear-gradient(to bottom, rgba(244, 243, 239, 0.22) 0%, rgba(244, 243, 239, 0.72) 56%, #f4f3ef 100%);
+  --stride-glass-border: rgba(12, 18, 25, 0.14);
+  --stride-chapter-ink: rgba(12, 18, 25, 0.065);
+  color-scheme: light;
+}
+
+:root {
+  --stride-radius-sm: 8px;
+  --stride-radius-md: 16px;
+  --stride-radius-lg: 24px;
+  --stride-radius-pill: 9999px;
+}

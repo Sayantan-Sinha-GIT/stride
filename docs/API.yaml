@@ -1,0 +1,229 @@
+openapi: 3.1.0
+info:
+  title: Stride API
+  version: 1.0.0
+  description: Cloudflare Workers REST API (/v1) for Stride GPS Activity Tracker & Social Fitness Platform.
+servers:
+  - url: http://127.0.0.1:8787
+    description: Local Wrangler Dev Server
+paths:
+  /v1/health:
+    get:
+      summary: Service, Neon Postgres & PostGIS health check
+      responses:
+        "200":
+          description: Healthy response
+  /v1/auth/signup:
+    post:
+      summary: Register email account and send 6-digit Brevo verification code
+      responses:
+        "201":
+          description: Account created, verification sent
+  /v1/auth/verify-email:
+    post:
+      summary: Verify email using token or 6-digit code
+      responses:
+        "200":
+          description: Verified
+  /v1/auth/login:
+    post:
+      summary: Sign in with email + password (issues JWT access + rotating refresh token)
+      responses:
+        "200":
+          description: Authenticated session tokens
+  /v1/auth/refresh:
+    post:
+      summary: Rotate refresh token (reuse revokes session family)
+      responses:
+        "200":
+          description: New access + refresh token pair
+  /v1/auth/logout:
+    post:
+      summary: Revoke current refresh session
+      responses:
+        "200":
+          description: Logged out
+  /v1/auth/google/start:
+    get:
+      summary: Start Web Google OAuth 2.0 redirect flow
+      responses:
+        "302":
+          description: Redirect to Google consent screen
+  /v1/auth/google/token:
+    post:
+      summary: Verify Flutter Google Sign-In ID token via JWKS and issue Stride session
+      responses:
+        "200":
+          description: Authenticated session
+  /v1/auth/sessions:
+    get:
+      summary: List active signed-in devices
+      responses:
+        "200":
+          description: Active sessions
+  /v1/auth/sessions/{id}:
+    delete:
+      summary: Sign out specific session device
+      responses:
+        "200":
+          description: Revoked
+  /v1/me:
+    get:
+      summary: Fetch current athlete profile, settings, and unread count
+      responses:
+        "200":
+          description: Current account payload
+    delete:
+      summary: Permanently delete user account and cascade all activities
+      responses:
+        "200":
+          description: Deleted
+  /v1/me/privacy-zones:
+    get:
+      summary: List owner's privacy zones
+      responses:
+        "200":
+          description: Privacy zones list
+    post:
+      summary: Create privacy zone circle (100m-5000m)
+      responses:
+        "201":
+          description: Created
+  /v1/me/export:
+    get:
+      summary: Export all activities as JSON + GPX 1.1 strings
+      responses:
+        "200":
+          description: Full archive JSON
+  /v1/activities:
+    post:
+      summary: Upload GPS recorded or manual activity (idempotent via Idempotency-Key / clientId)
+      responses:
+        "201":
+          description: Activity processed & saved
+  /v1/activities/import-gpx:
+    post:
+      summary: Import GPX 1.1 file or XML payload
+      responses:
+        "201":
+          description: GPX imported
+  /v1/activities/feed:
+    get:
+      summary: Cursor-paginated feed (following, public, mine) with server-side privacy masking
+      responses:
+        "200":
+          description: Feed items + nextCursor
+  /v1/activities/{id}:
+    get:
+      summary: Get activity detail (viewer-masked if not owner)
+      responses:
+        "200":
+          description: Activity telemetry, efforts & comments
+    patch:
+      summary: Update title, description, visibility, or gear
+      responses:
+        "200":
+          description: Updated
+    delete:
+      summary: Delete owned activity
+      responses:
+        "200":
+          description: Deleted
+  /v1/activities/{id}/gpx:
+    get:
+      summary: Download activity as GPX 1.1 XML (privacy-zone masked for non-owners)
+      responses:
+        "200":
+          description: GPX XML file
+  /v1/activities/{id}/kudos:
+    post:
+      summary: Give kudos to visible activity
+      responses:
+        "200":
+          description: Updated kudos count
+    delete:
+      summary: Remove kudos
+      responses:
+        "200":
+          description: Updated kudos count
+  /v1/segments:
+    get:
+      summary: List segments filtered by sport, city, or query
+      responses:
+        "200":
+          description: Segments list
+    post:
+      summary: Create non-loop, non-duplicate segment from owned activity
+      responses:
+        "201":
+          description: Segment created & backfilled
+  /v1/segments/{id}/leaderboard:
+    get:
+      summary: Segment leaderboard (all, year, month, following) with KV caching & fairness filtering
+      responses:
+        "200":
+          description: Ranked user best efforts
+  /v1/clubs:
+    get:
+      summary: List running & cycling clubs
+      responses:
+        "200":
+          description: Clubs list
+    post:
+      summary: Create new club
+      responses:
+        "201":
+          description: Club created
+  /v1/challenges:
+    get:
+      summary: List challenges
+      responses:
+        "200":
+          description: Challenges list
+    post:
+      summary: Create new challenge
+      responses:
+        "201":
+          description: Challenge created
+  /v1/routes/nearby:
+    get:
+      summary: PostGIS proximity discovery of public activity routes and segments
+      responses:
+        "200":
+          description: Nearby public routes
+  /v1/heatmap:
+    get:
+      summary: Anonymized city heatmap cells (contributor_count >= 3 strictly enforced)
+      responses:
+        "200":
+          description: Heatmap density points
+  /v1/maps/config:
+    get:
+      summary: Active map provider (Ola Maps or OpenFreeMap) light/dark style URLs
+      responses:
+        "200":
+          description: Map config JSON
+  /v1/maps/geocode:
+    get:
+      summary: KV-cached geocoding search proxy
+      responses:
+        "200":
+          description: Geocoded results
+  /v1/analytics/dashboard:
+    get:
+      summary: Weekly/monthly/yearly totals, streaks, goals, PRs, badges & gear
+      responses:
+        "200":
+          description: Analytics dashboard payload
+  /v1/analytics/year-in-review:
+    get:
+      summary: Annual summary card metrics
+      responses:
+        "200":
+          description: Year summary
+  /v1/admin/stats:
+    get:
+      summary: Protected moderator statistics & open report queue
+      responses:
+        "200":
+          description: Admin stats & reports

@@ -1,0 +1,11 @@
+---
+description: VibeKit universal engineering rules, UI/UX preferences, stack detection, and progressive skills loader.
+alwaysApply: true
+---
+
+Follow `AGENTS.md` in the repository root as the canonical entry point for VibeKit.
+
+- Load `core/RULES.md`, `core/WORKFLOW.md`, and `core/UI_UX_PREFERENCES.md` when starting new builds or UI overhauls; load only task-specific skills from `skills/<name>/SKILL.md` for targeted edits or bug fixes.
+- Detect actual stack commands from project manifests (`core/STACK_DETECTION.md`) instead of assuming Node.js.
+- Maintain `.vibekit/STATE.md`, `CHECKLIST.md`, and `QUALITY_CASES.md`.
+- Stop at a working local preview (`READY FOR MY REVIEW`) by default; deploy only when `DEPLOY MY PROJECT` (or explicit deployment authorization) triggers Stage 6 readiness + Stage 7 deployment together.
