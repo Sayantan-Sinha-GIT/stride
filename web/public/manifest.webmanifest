@@ -1,0 +1,10 @@
+{
+  "name": "Stride Lite — GPS Activity Tracker",
+  "short_name": "Stride",
+  "description": "Deterministic GPS tracking, Hausdorff segment competition, and privacy zones with zero heavy installs.",
+  "start_url": "/en/feed",
+  "display": "standalone",
+  "background_color": "#080B10",
+  "theme_color": "#FF5500",
+  "orientation": "portrait-primary"
+}

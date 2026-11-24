@@ -42,3 +42,18 @@ jobs:
           flutter analyze --no-fatal-infos --no-fatal-warnings
           flutter test
           flutter build apk --release --dart-define=STRIDE_API_URL=https://stride-api.srimantasutapa123.workers.dev
+
+  stride-lite-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+      - uses: android-actions/setup-android@v3
+      - working-directory: app-lite
+        run: |
+          sed -i 's/\r$//' gradlew
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest :app:assembleRelease

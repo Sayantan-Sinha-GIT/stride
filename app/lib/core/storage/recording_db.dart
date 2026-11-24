@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 import '../track_processor/track_processor.dart';
@@ -42,6 +44,9 @@ class RecordingDb {
     _db = await openDatabase(
       p.join(dbPath, 'stride_recorder.db'),
       version: 1,
+      onConfigure: (db) async {
+        await db.execute('PRAGMA auto_vacuum = FULL');
+      },
       onCreate: (db, _) async {
         await db.execute('''
           CREATE TABLE active_session (
@@ -175,6 +180,27 @@ class RecordingDb {
   Future<void> markSynced(String clientId) async {
     final db = await database;
     await db.delete('sync_queue', where: 'client_id = ?', whereArgs: [clientId]);
+    final remaining = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM sync_queue')) ?? 0;
+    if (remaining == 0) {
+      await compact();
+    }
+  }
+
+  Future<int> databaseSizeBytes() async {
+    if (kIsWeb) return 0;
+    try {
+      final dbPath = await getDatabasesPath();
+      final f = File(p.join(dbPath, 'stride_recorder.db'));
+      if (await f.exists()) return await f.length();
+    } catch (_) {}
+    return 0;
+  }
+
+  Future<void> compact() async {
+    try {
+      final db = await database;
+      await db.execute('VACUUM');
+    } catch (_) {}
   }
 
   Future<void> recordSyncFailure(String clientId, String error) async {

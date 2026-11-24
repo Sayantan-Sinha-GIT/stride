@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'core/api/stride_api_client.dart';
 import 'core/location/recording_controller.dart';
+import 'core/storage/app_cache_manager.dart';
 import 'core/storage/recording_db.dart';
 import 'features/auth/login_screen.dart';
 import 'features/community/clubs_challenges_screen.dart';
@@ -17,6 +18,8 @@ import 'theme/stride_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  AppCacheManager.configureMemoryBounds();
+  unawaited(AppCacheManager.enforceTempCap());
   try {
     await Firebase.initializeApp();
   } catch (_) {
@@ -121,6 +124,7 @@ class _StrideAppState extends State<StrideApp> {
                   onLocaleChanged: (l) => setState(() => _locale = l),
                   onSignOut: () async {
                     await _api.clearSession();
+                    unawaited(AppCacheManager.purgeTempCache());
                     if (mounted) setState(() => _authenticated = false);
                   },
                 )

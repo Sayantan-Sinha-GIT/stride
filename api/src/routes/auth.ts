@@ -738,6 +738,7 @@ authRouter.get('/google/start', (c) => {
     );
   }
   const locale = pickLang(c.req.query('lang'));
+  const client = c.req.query('client') === 'lite' ? 'lite' : 'web';
   const apiOrigin = c.env.API_ORIGIN || 'http://127.0.0.1:8787';
   const redirectUri = `${apiOrigin}/v1/auth/google/callback`;
   const params = new URLSearchParams({
@@ -745,7 +746,7 @@ authRouter.get('/google/start', (c) => {
     redirect_uri: redirectUri,
     response_type: 'code',
     scope: 'openid email profile',
-    state: locale,
+    state: client === 'lite' ? `${locale}:lite` : locale,
     prompt: 'select_account',
   });
   return c.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
@@ -753,10 +754,18 @@ authRouter.get('/google/start', (c) => {
 
 authRouter.get('/google/callback', async (c) => {
   const code = c.req.query('code');
-  const locale = pickLang(c.req.query('state'));
+  const rawState = c.req.query('state') || 'en';
+  const [stateLocale, stateClient] = rawState.split(':');
+  const locale = pickLang(stateLocale);
+  const isLiteClient = stateClient === 'lite';
   const appOrigin = c.env.APP_ORIGIN || 'http://localhost:3000';
+  const failTarget = (reason: string) =>
+    isLiteClient
+      ? `stride-lite://oauth?error=${encodeURIComponent(reason)}`
+      : `${appOrigin}/${locale}/login?error=${encodeURIComponent(reason)}`;
+
   if (!code || !c.env.GOOGLE_CLIENT_ID || !c.env.GOOGLE_CLIENT_SECRET) {
-    return c.redirect(`${appOrigin}/${locale}/login?error=google_oauth_unavailable`);
+    return c.redirect(failTarget('google_oauth_unavailable'));
   }
 
   const apiOrigin = c.env.API_ORIGIN || 'http://127.0.0.1:8787';
@@ -772,11 +781,11 @@ authRouter.get('/google/callback', async (c) => {
     }),
   });
   if (!tokenRes.ok) {
-    return c.redirect(`${appOrigin}/${locale}/login?error=google_exchange_failed`);
+    return c.redirect(failTarget('google_exchange_failed'));
   }
   const tokenData = (await tokenRes.json()) as { id_token?: string };
   if (!tokenData.id_token) {
-    return c.redirect(`${appOrigin}/${locale}/login?error=missing_id_token`);
+    return c.redirect(failTarget('missing_id_token'));
   }
 
   try {
@@ -785,7 +794,7 @@ authRouter.get('/google/callback', async (c) => {
     const tokens = await issueSessionTokens(
       c.env,
       { id: linked.user_id, role: linked.role },
-      'Web Google Sign-In',
+      isLiteClient ? 'Stride Lite Android' : 'Web Google Sign-In',
       c.req.header('User-Agent') || '',
       getClientIpHint(c)
     );
@@ -796,11 +805,14 @@ authRouter.get('/google/callback', async (c) => {
       { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken },
       120
     );
+    if (isLiteClient) {
+      return c.redirect(`stride-lite://oauth?oauthCode=${oauthCode}`);
+    }
     const headers = new Headers({ Location: `${appOrigin}/${locale}/login?oauthCode=${oauthCode}` });
     setAuthCookies(headers, tokens.accessToken, tokens.refreshToken, c.req.url.startsWith('https://'));
     return new Response(null, { status: 302, headers });
   } catch {
-    return c.redirect(`${appOrigin}/${locale}/login?error=google_verification_failed`);
+    return c.redirect(failTarget('google_verification_failed'));
   }
 });
 

@@ -335,6 +335,13 @@ describe('Stride API — Auth, Idempotency, Privacy & Authorization Matrix', () 
     expect(Array.isArray(nearbyJson.segments)).toBe(true);
 
     // OAuth single-use KV handoff exchange + replay rejection
+    const oauthStartLite = await app.fetch(
+      new Request('http://localhost/v1/auth/google/start?lang=hi&client=lite'),
+      { ...testEnv, GOOGLE_CLIENT_ID: 'demo-google-client-id' }
+    );
+    expect(oauthStartLite.status).toBe(302);
+    expect(oauthStartLite.headers.get('Location')).toContain('state=hi%3Alite');
+
     const handoffCode = 'a'.repeat(48);
     kvStore.set(
       `oauth:handoff:${handoffCode}`,

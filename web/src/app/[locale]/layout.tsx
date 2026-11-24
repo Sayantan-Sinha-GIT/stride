@@ -19,6 +19,7 @@ export async function generateMetadata({
       locale === 'hi'
         ? 'Stride — सटीक GPS ट्रैकिंग, सेगमेंट्स और प्राइवेसी-फर्स्ट फिटनेस'
         : 'Stride — GPS Activity Tracker, Segments & Social Fitness',
+    manifest: '/manifest.webmanifest',
     alternates: {
       canonical: `${siteUrl}/${locale}`,
       languages: {

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/api/stride_api_client.dart';
+import '../../core/storage/app_cache_manager.dart';
+import '../../core/storage/recording_db.dart';
 import '../../l10n/app_localizations.dart';
 import '../../theme/stride_theme.dart';
 
@@ -34,6 +36,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> with Sing
   List<Map<String, dynamic>> _sessions = [];
   List<Map<String, dynamic>> _notifications = [];
   String _units = 'metric';
+  int _cacheBytes = 0;
 
   @override
   void initState() {
@@ -55,6 +58,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> with Sing
       final zones = await widget.api.fetchPrivacyZones();
       final sessions = await widget.api.fetchSessions();
       final notifs = await widget.api.fetchNotifications();
+      final cacheBytes = await AppCacheManager.totalUsageBytes();
       final settings = me['settings'] as Map<String, dynamic>?;
       setState(() {
         _me = me;
@@ -63,6 +67,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> with Sing
         _sessions = sessions.whereType<Map<String, dynamic>>().toList();
         _notifications = notifs.whereType<Map<String, dynamic>>().toList();
         _units = (settings?['units'] ?? 'metric').toString();
+        _cacheBytes = cacheBytes;
       });
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -337,6 +342,36 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> with Sing
                                     ),
                             )),
                         const SizedBox(height: 16),
+                        Card(
+                          child: ListTile(
+                            leading: const Icon(Icons.cleaning_services_outlined),
+                            title: Text(widget.locale.languageCode == 'hi' ? 'कैश और स्टोरेज' : 'Storage & Cache'),
+                            subtitle: Text(
+                              '${(_cacheBytes / 1024).toStringAsFixed(1)} KB used · 15 MB mem / 4 MB disk cap',
+                            ),
+                            trailing: TextButton(
+                              onPressed: () async {
+                                await AppCacheManager.purgeTempCache();
+                                await RecordingDb().compact();
+                                final updated = await AppCacheManager.totalUsageBytes();
+                                if (mounted) {
+                                  setState(() => _cacheBytes = updated);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        widget.locale.languageCode == 'hi'
+                                            ? 'कैश साफ किया गया।'
+                                            : 'Cache cleared and SQLite compacted.',
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                              child: Text(widget.locale.languageCode == 'hi' ? 'साफ़ करें' : 'Clear'),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
                         OutlinedButton(
                           onPressed: () async {
                             final data = await widget.api.exportMyData();

@@ -71,9 +71,10 @@ Primary market is India (distances in km by default, local time zones, INR not n
 
 | Area | Choice | Notes |
 |---|---|---|
-| Mobile app | **Flutter** (Android first, iOS-ready) | Background GPS, offline-first recording |
-| Website | **Next.js 15 deployed on Cloudflare Workers** via `@opennextjs/cloudflare` (`stride-web.srimantasutapa123.workers.dev`) | Server-rendered public pages for SEO and share previews; zero Vercel dependency |
-| Android APK hosting | **Cloudflare Workers chunked Static Assets** (`apk-host/` -> `stride-apk.srimantasutapa123.workers.dev/stride-android.apk`) | Streams `86.6 MB` release APK (`18 MiB` chunks + SHA-256 manifest); `/api/download-apk` redirects 302 with zero R2/card requirement |
+| Mobile app (Standard) | **Flutter** (Android first, iOS-ready, `com.stride.tracker`, `24.6 MB`) | Background GPS, offline-first recording, trimmed of bloated native map engines, bounded `15 MB` image memory cache + `4 MB` temp cap + `VACUUM` DB compaction |
+| Mobile app (Lite) | **Native Kotlin Android** (`/app-lite`, `com.stride.tracker.lite`, `86 KB`) | Ultra-light pure Android SDK/SQLite build with zero heavy engine/tile bloat, configurable LRU disk cache cap (`512 KB` / `2 MB` / `5 MB`), `PRAGMA auto_vacuum = FULL`, `Data Saver`, & auto-purge on close |
+| Website & Web Lite PWA | **Next.js 15 deployed on Cloudflare Workers** via `@opennextjs/cloudflare` (`stride-web.srimantasutapa123.workers.dev`) | Server-rendered public pages for SEO and share previews + `/manifest.webmanifest` installable Web Lite PWA (`?variant=lite` download hub); zero Vercel dependency |
+| Android APK hosting | **Cloudflare Workers chunked Static Assets** (`apk-host/` -> `stride-apk.srimantasutapa123.workers.dev`) | Serves `stride-lite-android.apk` (`88,022` bytes / `86 KB`) & `stride-android.apk` (`25,791,329` bytes / `24.6 MB` via `18 MiB` chunks) + `/manifest.json`; `/api/download-apk` redirects 302 with zero R2/card requirement |
 | API | **Cloudflare Workers** (a single TypeScript API, e.g. with Hono) | Used by both the app and the website |
 | Database | **Neon (Postgres)** with the **PostGIS** extension | Use Neon's serverless driver from Workers; use pooled connections; handle scale-to-zero cold starts gracefully |
 | Email | **Brevo** (transactional email API) | Verification, password reset, optional digest |
@@ -82,7 +83,7 @@ Primary market is India (distances in km by default, local time zones, INR not n
 | Maps | **OpenFreeMap** (MapLibre vector `dark` / `positron` styles, zero API key/card) active via `/v1/maps/config` abstraction | Fallback activated after Ola Maps direct vector style endpoint returned HTTP 401; geocoding still cached server-side in KV |
 | Scheduled jobs | **Protected admin endpoint** `POST /v1/admin/cron/heatmap` + cleanup trigger | Cloud account free-tier 5-cron cap is already allocated to other Workers; same aggregation pipeline invoked on demand |
 | Caching | Cloudflare Cache API / KV | Public pages, leaderboards, heatmap tiles |
-| Code hosting | GitHub (monorepo: `/app`, `/web`, `/api`, `/apk-host`, `/packages/track-engine`, `/docs`) | Commit per feature; keep `main` deployable |
+| Code hosting | GitHub (monorepo: `/app`, `/app-lite`, `/web`, `/api`, `/apk-host`, `/packages/track-engine`, `/docs`) | Commit per feature; keep `main` deployable |
 
 Everything on this list must be usable on free plans. If any component needs a payment method (credit/debit card) on the account to unlock its free tier, **do not use it**. Pick a free alternative that needs no card, and record the choice.
 
@@ -360,10 +361,10 @@ Payments or subscriptions, ads, in-app messaging between users, live tracking sh
 - **100% Cloudflare Workers Production Architecture (Zero Vercel)**:
   - Website (`stride-web`): `https://stride-web.srimantasutapa123.workers.dev`
   - API (`stride-api`): `https://stride-api.srimantasutapa123.workers.dev`
-  - APK Host (`stride-apk`): `https://stride-apk.srimantasutapa123.workers.dev/stride-android.apk` (SHA-256 verified chunked streaming via Workers Static Assets; redirected from `/api/download-apk`). All Vercel deployments were permanently removed.
+  - APK Host (`stride-apk`): `https://stride-apk.srimantasutapa123.workers.dev` serves both `stride-lite-android.apk` (`88,022` bytes / `86 KB`, `com.stride.tracker.lite`, pure Kotlin SDK/SQLite with `512 KB`/`2 MB`/`5 MB` LRU disk cache cap, `PRAGMA auto_vacuum = FULL`, `Data Saver`, and temp auto-purge) and `stride-android.apk` (`25,791,329` bytes / `24.6 MB`, `com.stride.tracker`, trimmed of unused tile binaries with `AppCacheManager` `15 MB` mem / `4 MB` temp cap + `VACUUM`), redirected from `/api/download-apk?variant=lite` and `/api/download-apk`. All Vercel deployments were permanently removed.
 - **Authentication & Cross-Origin Session Delivery**:
   - Passwords hashed with Web Crypto `PBKDF2-SHA256` (100,000 iterations).
-  - Email verification and password reset use localized 6-digit Brevo OTP codes (`en` / `hi`) with resend/edit UX on both web and Flutter.
-  - Web Google OAuth signs users in via single-use `STRIDE_KV` `?oauthCode=` exchange (`POST /v1/auth/oauth-exchange`) so shared `*.workers.dev` public-suffix origins authenticate seamlessly alongside HttpOnly refresh cookies and bearer tokens.
-- **UI/UX**: Flagship bespoke identity applied per the owner's UI/UX preferences across Web (`web/src/styles/tokens.css`, GSAP/Lenis/Three.js GLSL, responsive `1440px` & `390px` viewports) and Flutter (`app/lib/theme/stride_theme.dart`), preserving Light/Dark/System theme switching and full English/Hindi (`en` / `hi`) parity.
-- **CI/CD & Documentation**: GitHub Actions (`Stride CI`) runs Node 22 (`web-and-api`) and Java 21 + Flutter `3.50.1` (`flutter-app`, conditional `google-services.json` Gradle plugin) to validate linting, typechecks, tests, and Android release APK builds on `main`. `docs/SETUP-GUIDE.md` was intentionally omitted per owner instruction, with architecture decisions tracked in `docs/DECISIONS.md`, limits in `docs/LIMITS.md`, and release steps in `docs/RELEASE.md`.
+  - Email verification and password reset use localized 6-digit Brevo OTP codes (`en` / `hi`) with resend/edit UX across Web, Flutter Standard, and `Stride Lite`.
+  - Web and `Stride Lite` Google OAuth sign users in via single-use `STRIDE_KV` `?oauthCode=` exchange (`POST /v1/auth/oauth-exchange`, `?client=lite` -> `stride-lite://oauth?oauthCode=...`) so shared `*.workers.dev` public-suffix origins authenticate seamlessly alongside HttpOnly refresh cookies and Keystore-encrypted Android tokens.
+- **UI/UX**: Flagship bespoke identity applied per the owner's UI/UX preferences across Web (`web/src/styles/tokens.css`, GSAP/Lenis/Three.js GLSL, Dual-Edition `/en/download` + `/manifest.webmanifest` Web Lite PWA, responsive `1440px` & `390px`), Flutter (`app/lib/theme/stride_theme.dart`), and `Stride Lite` (`app-lite/.../core/LiteTheme.kt`), preserving Light/Dark/System theme switching and full English/Hindi (`en` / `hi`) parity.
+- **CI/CD & Documentation**: GitHub Actions (`Stride CI`) runs Node 22 (`web-and-api`), Java 21 + Flutter `3.50.1` (`flutter-app`), and Java 21 + Gradle `9.5.0` (`stride-lite-android`) to validate linting, typechecks, tests, and Android release APK builds on `main`. `docs/SETUP-GUIDE.md` was intentionally omitted per owner instruction, with architecture decisions tracked in `docs/DECISIONS.md`, limits in `docs/LIMITS.md`, and release steps in `docs/RELEASE.md`.

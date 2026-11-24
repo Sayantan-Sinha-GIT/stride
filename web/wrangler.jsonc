@@ -18,6 +18,8 @@
     "NEXT_PUBLIC_API_URL": "https://stride-api.srimantasutapa123.workers.dev",
     "API_INTERNAL_URL": "https://stride-api.srimantasutapa123.workers.dev",
     "NEXT_PUBLIC_SITE_URL": "https://stride-web.srimantasutapa123.workers.dev",
-    "NEXT_PUBLIC_APK_DOWNLOAD_URL": "https://stride-apk.srimantasutapa123.workers.dev/stride-android.apk"
+    "NEXT_PUBLIC_APK_DOWNLOAD_URL": "https://stride-apk.srimantasutapa123.workers.dev/stride-android.apk",
+    "NEXT_PUBLIC_APK_LITE_DOWNLOAD_URL": "https://stride-apk.srimantasutapa123.workers.dev/stride-lite-android.apk",
+    "NEXT_PUBLIC_APK_MANIFEST_URL": "https://stride-apk.srimantasutapa123.workers.dev/manifest.json"
   }
 }
