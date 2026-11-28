@@ -1,396 +1,348 @@
 package com.stride.tracker.lite.net
 
+import android.content.Context
 import com.stride.tracker.lite.core.SecurePrefs
 import com.stride.tracker.lite.storage.LiteStorageGuardian
+import okhttp3.ConnectionPool
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
-import java.io.DataOutputStream
-import java.io.InputStream
-import java.net.HttpURLConnection
-import java.net.URL
+import java.io.IOException
 import java.net.URLEncoder
-import java.util.UUID
-import java.util.zip.GZIPInputStream
+import java.util.concurrent.TimeUnit
 
-class ApiException(
-    val status: Int,
-    val code: String?,
-    override val message: String,
-) : Exception(message)
+class ApiException(val statusCode: Int, val code: String?, message: String) : Exception(message)
 
 class StrideLiteApi(
-    private val prefs: SecurePrefs,
-    private val guardian: LiteStorageGuardian,
+    private val context: Context,
+    val prefs: SecurePrefs,
+    val guardian: LiteStorageGuardian
 ) {
-    private fun extractError(rawBody: String, status: Int): ApiException {
-        return try {
-            val obj = JSONObject(rawBody)
-            val err = obj.optJSONObject("error")
-            if (err != null) {
-                val msg = err.optString("message").takeIf { it.isNotBlank() } ?: "HTTP $status"
-                val code = err.optString("code").takeIf { it.isNotBlank() }
-                ApiException(status, code, msg)
-            } else {
-                val msg = obj.optString("message").takeIf { it.isNotBlank() } ?: "HTTP $status"
-                ApiException(status, null, msg)
+    private val jsonType = "application/json; charset=utf-8".toMediaType()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(12, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .writeTimeout(20, TimeUnit.SECONDS)
+        .connectionPool(ConnectionPool(4, 3, TimeUnit.MINUTES))
+        .build()
+
+    private val refreshLock = Any()
+
+    private fun baseUrl(): String = prefs.apiBaseUrl.trimEnd('/')
+
+    private fun encode(v: String): String = URLEncoder.encode(v, "UTF-8")
+
+    private fun executeJson(
+        method: String,
+        path: String,
+        body: JSONObject? = null,
+        extraHeaders: Map<String, String> = emptyMap(),
+        cacheKey: String? = null,
+        retried: Boolean = false
+    ): JSONObject {
+        val builder = Request.Builder().url("${baseUrl()}$path")
+        prefs.accessToken?.takeIf { it.isNotBlank() }?.let {
+            builder.header("Authorization", "Bearer $it")
+        }
+        extraHeaders.forEach { (k, v) -> builder.header(k, v) }
+
+        val reqBody = body?.toString()?.toRequestBody(jsonType)
+        when (method) {
+            "GET" -> builder.get()
+            "POST" -> builder.post(reqBody ?: "{}".toRequestBody(jsonType))
+            "PATCH" -> builder.patch(reqBody ?: "{}".toRequestBody(jsonType))
+            "DELETE" -> if (reqBody != null) builder.delete(reqBody) else builder.delete()
+        }
+
+        try {
+            client.newCall(builder.build()).execute().use { resp ->
+                val raw = resp.body?.string().orEmpty()
+                if (resp.code == 401 && !retried && !path.contains("/auth/")) {
+                    if (tryRefreshToken()) {
+                        return executeJson(method, path, body, extraHeaders, cacheKey, retried = true)
+                    }
+                }
+                if (!resp.isSuccessful) {
+                    val parsedErr = runCatching { JSONObject(raw) }.getOrNull()
+                    val errObj = parsedErr?.optJSONObject("error")
+                    val msg = errObj?.optString("message")?.takeIf { it.isNotBlank() }
+                        ?: parsedErr?.optString("message")?.takeIf { it.isNotBlank() }
+                        ?: "HTTP ${resp.code}"
+                    throw ApiException(resp.code, errObj?.optString("code"), msg)
+                }
+                val text = raw.ifBlank { "{}" }
+                if (method == "GET" && cacheKey != null) {
+                    runCatching { guardian.putHttpCache(cacheKey, text, prefs.cacheCapBytes) }
+                }
+                return JSONObject(text)
             }
-        } catch (_: Throwable) {
-            ApiException(status, null, "Request failed (HTTP $status)")
+        } catch (io: IOException) {
+            if (method == "GET" && cacheKey != null) {
+                guardian.getHttpCache(cacheKey)?.let { return JSONObject(it) }
+            }
+            throw io
         }
     }
 
-    private fun tryRefresh(): Boolean {
+    private fun executePlain(path: String, retried: Boolean = false): String {
+        val builder = Request.Builder().url("${baseUrl()}$path").get()
+        prefs.accessToken?.takeIf { it.isNotBlank() }?.let {
+            builder.header("Authorization", "Bearer $it")
+        }
+        client.newCall(builder.build()).execute().use { resp ->
+            if (resp.code == 401 && !retried) {
+                if (tryRefreshToken()) return executePlain(path, retried = true)
+            }
+            if (!resp.isSuccessful) throw ApiException(resp.code, null, "HTTP ${resp.code}")
+            return resp.body?.string().orEmpty()
+        }
+    }
+
+    private fun tryRefreshToken(): Boolean = synchronized(refreshLock) {
         val refresh = prefs.refreshToken ?: return false
         return try {
-            val payload = JSONObject().put("refreshToken", refresh).toString()
-            val body = rawRequest("POST", "/v1/auth/refresh", payload, skipAuthRetry = true)
-            val json = JSONObject(body)
-            val access = json.optString("accessToken")
-            val nextRefresh = json.optString("refreshToken")
-            if (access.isNotBlank() && nextRefresh.isNotBlank()) {
-                prefs.accessToken = access
-                prefs.refreshToken = nextRefresh
+            val payload = JSONObject().put("refreshToken", refresh)
+            val req = Request.Builder()
+                .url("${baseUrl()}/v1/auth/refresh")
+                .post(payload.toString().toRequestBody(jsonType))
+                .build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    prefs.clearSession()
+                    return false
+                }
+                val json = JSONObject(resp.body?.string().orEmpty())
+                prefs.accessToken = json.optString("accessToken")
+                prefs.refreshToken = json.optString("refreshToken")
                 true
-            } else {
-                prefs.clearSession()
-                false
             }
         } catch (_: Throwable) {
-            prefs.clearSession()
             false
         }
     }
 
-    private fun readBody(conn: HttpURLConnection, isOk: Boolean): String {
-        val rawStream: InputStream = (if (isOk) conn.inputStream else conn.errorStream) ?: return ""
-        val decoded = if ("gzip".equals(conn.contentEncoding, ignoreCase = true)) {
-            GZIPInputStream(rawStream)
-        } else {
-            rawStream
-        }
-        return decoded.bufferedReader(Charsets.UTF_8).use { it.readText() }
-    }
-
-    private fun rawRequest(
-        method: String,
-        pathAndQuery: String,
-        jsonBody: String? = null,
-        extraHeaders: Map<String, String> = emptyMap(),
-        skipAuthRetry: Boolean = false,
-    ): String {
-        val url = URL("${prefs.baseUrl}$pathAndQuery")
-        val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            connectTimeout = 12000
-            readTimeout = 18000
-            useCaches = false
-            setRequestProperty("Accept", "application/json")
-            val tok = prefs.accessToken
-            if (!tok.isNullOrEmpty()) {
-                setRequestProperty("Authorization", "Bearer $tok")
-            }
-            for ((k, v) in extraHeaders) {
-                setRequestProperty(k, v)
-            }
-            if (jsonBody != null) {
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                outputStream.use { it.write(jsonBody.toByteArray(Charsets.UTF_8)) }
-            }
-        }
-
-        val status = conn.responseCode
-        val text = readBody(conn, status in 200..299)
-        conn.disconnect()
-
-        if (status == 401 && !skipAuthRetry && !pathAndQuery.contains("/auth/")) {
-            if (tryRefresh()) {
-                return rawRequest(method, pathAndQuery, jsonBody, extraHeaders, skipAuthRetry = true)
-            }
-        }
-
-        if (status !in 200..299) {
-            throw extractError(text, status)
-        }
-        return text
-    }
-
-    private fun cachedGetJson(pathAndQuery: String, bypassCache: Boolean = false): JSONObject {
-        val cacheKey = "GET:$pathAndQuery"
-        if (!bypassCache) {
-            try {
-                val resText = rawRequest("GET", pathAndQuery)
-                guardian.putCache(cacheKey, resText, prefs.cacheCapBytes)
-                return JSONObject(resText)
-            } catch (e: ApiException) {
-                if (e.status == 401 || e.status == 403 || e.status == 404) throw e
-                val cached = guardian.getCache(cacheKey)
-                if (cached != null) return JSONObject(cached)
-                throw e
-            } catch (e: Throwable) {
-                val cached = guardian.getCache(cacheKey)
-                if (cached != null) return JSONObject(cached)
-                throw ApiException(0, "OFFLINE", e.message ?: "Offline")
-            }
-        } else {
-            val resText = rawRequest("GET", pathAndQuery)
-            guardian.putCache(cacheKey, resText, prefs.cacheCapBytes)
-            return JSONObject(resText)
-        }
-    }
-
-    fun getCachedSnapshotOnly(pathAndQuery: String): JSONObject? {
-        val cached = guardian.getCache("GET:$pathAndQuery") ?: return null
-        return try {
-            JSONObject(cached)
-        } catch (_: Throwable) {
-            null
-        }
-    }
-
-    fun loginWithEmail(email: String, password: String): JSONObject {
-        val payload = JSONObject()
-            .put("email", email)
-            .put("password", password)
-            .put("deviceName", "Stride Lite Android")
-            .toString()
-        val json = JSONObject(rawRequest("POST", "/v1/auth/login", payload))
-        prefs.accessToken = json.optString("accessToken")
-        prefs.refreshToken = json.optString("refreshToken")
-        return json
-    }
-
-    fun signup(
-        email: String,
-        password: String,
-        displayName: String,
-        handle: String,
-        language: String,
-    ): JSONObject {
-        val payload = JSONObject()
-            .put("email", email)
-            .put("password", password)
-            .put("displayName", displayName)
-            .put("handle", handle)
-            .put("language", language)
-            .toString()
-        return JSONObject(rawRequest("POST", "/v1/auth/signup", payload))
-    }
-
-    fun verifyEmail(email: String, code: String): JSONObject {
-        val payload = JSONObject().put("email", email).put("code", code).toString()
-        return JSONObject(rawRequest("POST", "/v1/auth/verify-email", payload))
-    }
-
-    fun resendVerification(email: String, language: String): JSONObject {
-        val payload = JSONObject().put("email", email).put("language", language).toString()
-        return JSONObject(rawRequest("POST", "/v1/auth/resend-verification", payload))
-    }
-
-    fun requestPasswordReset(email: String, language: String) {
-        val payload = JSONObject().put("email", email).put("language", language).toString()
-        rawRequest("POST", "/v1/auth/forgot-password", payload)
-    }
-
-    fun confirmPasswordReset(email: String, code: String, newPassword: String) {
-        val payload = JSONObject()
-            .put("email", email)
-            .put("code", code)
-            .put("newPassword", newPassword)
-            .toString()
-        rawRequest("POST", "/v1/auth/reset-password", payload)
-    }
-
-    fun exchangeOAuthCode(code: String): JSONObject {
-        val payload = JSONObject().put("code", code).toString()
-        val json = JSONObject(rawRequest("POST", "/v1/auth/oauth-exchange", payload))
-        prefs.accessToken = json.optString("accessToken")
-        prefs.refreshToken = json.optString("refreshToken")
-        return json
-    }
-
-    fun googleStartUrl(lang: String): String {
-        return "${prefs.baseUrl}/v1/auth/google/start?lang=${URLEncoder.encode(lang, "UTF-8")}&client=lite"
-    }
-
-    fun fetchFeed(scope: String, limit: Int): JSONArray {
-        val res = cachedGetJson("/v1/activities/feed?scope=${URLEncoder.encode(scope, "UTF-8")}&limit=$limit")
-        return res.optJSONArray("items") ?: JSONArray()
-    }
-
-    fun fetchActivityDetail(id: String): JSONObject {
-        return cachedGetJson("/v1/activities/$id")
-    }
-
-    fun toggleKudos(activityId: String, currentlyLiked: Boolean) {
-        if (currentlyLiked) rawRequest("DELETE", "/v1/activities/$activityId/kudos")
-        else rawRequest("POST", "/v1/activities/$activityId/kudos")
-    }
-
-    fun addComment(activityId: String, body: String): JSONObject {
-        val payload = JSONObject().put("body", body).toString()
-        return JSONObject(rawRequest("POST", "/v1/activities/$activityId/comments", payload))
-    }
-
-    fun deleteComment(activityId: String, commentId: String) {
-        rawRequest("DELETE", "/v1/activities/$activityId/comments/$commentId")
-    }
-
-    fun deleteActivity(activityId: String) {
-        rawRequest("DELETE", "/v1/activities/$activityId")
-    }
-
-    fun uploadActivityIdempotent(clientId: String, payloadJson: String): JSONObject {
-        val res = rawRequest(
-            "POST",
-            "/v1/activities",
-            payloadJson,
-            extraHeaders = mapOf("Idempotency-Key" to clientId)
+    // Auth
+    fun login(email: String, password: String): JSONObject {
+        val res = executeJson(
+            "POST", "/v1/auth/login",
+            JSONObject().put("email", email).put("password", password).put("deviceName", "Stride Lite 2.0 Android")
         )
-        return JSONObject(res)
+        prefs.accessToken = res.optString("accessToken")
+        prefs.refreshToken = res.optString("refreshToken")
+        res.optJSONObject("user")?.optString("id")?.takeIf { it.isNotBlank() }?.let { prefs.userId = it }
+        return res
     }
 
-    fun importGpxMultipart(gpxXml: String, title: String?, activityType: String, visibility: String): JSONObject {
-        val boundary = "----StrideLiteBoundary${UUID.randomUUID()}"
-        val out = ByteArrayOutputStream()
-        DataOutputStream(out).use { dos ->
-            fun writeField(name: String, value: String) {
-                dos.writeBytes("--$boundary\r\n")
-                dos.writeBytes("Content-Disposition: form-data; name=\"$name\"\r\n\r\n")
-                dos.write(value.toByteArray(Charsets.UTF_8))
-                dos.writeBytes("\r\n")
-            }
-            writeField("gpx", gpxXml)
-            if (!title.isNullOrBlank()) writeField("title", title)
-            writeField("activityType", activityType)
-            writeField("visibility", visibility)
-            dos.writeBytes("--$boundary--\r\n")
+    fun signup(email: String, password: String, displayName: String, handle: String, language: String): JSONObject =
+        executeJson(
+            "POST", "/v1/auth/signup",
+            JSONObject()
+                .put("email", email)
+                .put("password", password)
+                .put("displayName", displayName)
+                .put("handle", handle)
+                .put("language", language)
+        )
+
+    fun verifyEmail(email: String, code: String): JSONObject =
+        executeJson("POST", "/v1/auth/verify-email", JSONObject().put("email", email).put("code", code))
+
+    fun resendVerification(email: String, language: String): JSONObject =
+        executeJson("POST", "/v1/auth/resend-verification", JSONObject().put("email", email).put("language", language))
+
+    fun forgotPassword(email: String, language: String): JSONObject =
+        executeJson("POST", "/v1/auth/forgot-password", JSONObject().put("email", email).put("language", language))
+
+    fun resetPassword(email: String, code: String, newPassword: String): JSONObject =
+        executeJson("POST", "/v1/auth/reset-password", JSONObject().put("email", email).put("code", code).put("newPassword", newPassword))
+
+    fun exchangeOAuthCode(oauthCode: String): JSONObject {
+        val res = executeJson("POST", "/v1/auth/oauth-exchange", JSONObject().put("oauthCode", oauthCode))
+        prefs.accessToken = res.optString("accessToken")
+        prefs.refreshToken = res.optString("refreshToken")
+        res.optJSONObject("user")?.optString("id")?.takeIf { it.isNotBlank() }?.let { prefs.userId = it }
+        return res
+    }
+
+    // Feed & Activities
+    fun fetchFeed(scope: String): JSONArray {
+        val limit = if (prefs.dataSaver) 12 else 25
+        return executeJson("GET", "/v1/activities/feed?scope=${encode(scope)}&limit=$limit", cacheKey = "feed_$scope")
+            .optJSONArray("items") ?: JSONArray()
+    }
+
+    fun fetchActivityDetail(id: String): JSONObject =
+        executeJson("GET", "/v1/activities/${encode(id)}", cacheKey = "act_$id")
+
+    fun fetchActivityGpx(id: String): String = executePlain("/v1/activities/${encode(id)}/gpx")
+
+    fun toggleKudos(id: String, liked: Boolean): JSONObject =
+        executeJson(if (liked) "DELETE" else "POST", "/v1/activities/${encode(id)}/kudos")
+
+    fun addComment(id: String, bodyText: String): JSONObject =
+        executeJson("POST", "/v1/activities/${encode(id)}/comments", JSONObject().put("body", bodyText))
+
+    fun updateActivityVisibility(id: String, visibility: String): JSONObject =
+        executeJson("PATCH", "/v1/activities/${encode(id)}", JSONObject().put("visibility", visibility))
+
+    fun deleteActivity(id: String): JSONObject =
+        executeJson("DELETE", "/v1/activities/${encode(id)}")
+
+    fun createSegment(activityId: String, name: String, startIndex: Int, endIndex: Int): JSONObject =
+        executeJson(
+            "POST", "/v1/segments",
+            JSONObject()
+                .put("activityId", activityId)
+                .put("name", name)
+                .put("startIndex", startIndex)
+                .put("endIndex", endIndex)
+        )
+
+    fun uploadActivityRaw(clientId: String, payload: JSONObject): JSONObject =
+        executeJson("POST", "/v1/activities", payload, mapOf("Idempotency-Key" to clientId))
+
+    fun importGpxXml(gpxXml: String, title: String?, activityType: String, visibility: String = "followers"): JSONObject {
+        val mp = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("gpx", gpxXml)
+            .addFormDataPart("activityType", activityType)
+            .addFormDataPart("visibility", visibility)
+        if (!title.isNullOrBlank()) mp.addFormDataPart("title", title)
+        val builder = Request.Builder().url("${baseUrl()}/v1/activities/import-gpx").post(mp.build())
+        prefs.accessToken?.let { builder.header("Authorization", "Bearer $it") }
+        client.newCall(builder.build()).execute().use { resp ->
+            val raw = resp.body?.string().orEmpty()
+            if (!resp.isSuccessful) throw ApiException(resp.code, null, "HTTP ${resp.code}: $raw")
+            return JSONObject(raw.ifBlank { "{}" })
         }
-        val bytes = out.toByteArray()
-        val url = URL("${prefs.baseUrl}/v1/activities/import-gpx")
-        val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 15000
-            readTimeout = 20000
-            doOutput = true
-            prefs.accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
-            setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-            outputStream.use { it.write(bytes) }
-        }
-        val status = conn.responseCode
-        val text = readBody(conn, status in 200..299)
-        conn.disconnect()
-        if (status !in 200..299) throw extractError(text, status)
-        return JSONObject(text)
     }
 
-    fun fetchSegments(): JSONArray {
-        val res = cachedGetJson("/v1/segments")
-        return res.optJSONArray("segments") ?: JSONArray()
+    // Segments, Routes & Heatmap
+    fun fetchSegments(activityType: String? = null): JSONArray {
+        val qs = if (activityType.isNullOrBlank()) "" else "?activityType=${encode(activityType)}"
+        return executeJson("GET", "/v1/segments$qs", cacheKey = "segments_${activityType ?: "all"}")
+            .optJSONArray("segments") ?: JSONArray()
     }
 
-    fun fetchSegmentDetail(id: String, range: String): Pair<JSONObject, JSONArray> {
-        val detail = cachedGetJson("/v1/segments/$id")
-        val lb = cachedGetJson("/v1/segments/$id/leaderboard?range=$range")
-        return detail to (lb.optJSONArray("entries") ?: JSONArray())
+    fun fetchSegmentDetail(id: String): JSONObject =
+        executeJson("GET", "/v1/segments/${encode(id)}", cacheKey = "seg_$id")
+
+    fun fetchSegmentLeaderboard(id: String, range: String = "all"): JSONArray =
+        executeJson("GET", "/v1/segments/${encode(id)}/leaderboard?range=${encode(range)}", cacheKey = "lb_${id}_$range")
+            .optJSONArray("entries") ?: JSONArray()
+
+    fun flagSegmentEffort(effortId: String, reason: String): JSONObject =
+        executeJson("POST", "/v1/segments/efforts/${encode(effortId)}/flag", JSONObject().put("reason", reason).put("requestReview", true))
+
+    fun fetchNearbyRoutes(lat: Double = 12.9762, lng: Double = 77.5929, radiusKm: Int = 50): JSONObject =
+        executeJson("GET", "/v1/routes/nearby?lat=$lat&lng=$lng&radiusKm=$radiusKm", cacheKey = "nearby_routes")
+
+    fun saveRoute(name: String, activityType: String, distanceM: Double, elevationGainM: Double, encodedPolyline: String): JSONObject =
+        executeJson(
+            "POST", "/v1/routes/saved",
+            JSONObject()
+                .put("name", name)
+                .put("activityType", activityType)
+                .put("distanceM", distanceM)
+                .put("elevationGainM", elevationGainM)
+                .put("encodedPolyline", encodedPolyline)
+        )
+
+    fun fetchHeatmap(city: String = "", activityType: String = "all"): JSONObject =
+        executeJson("GET", "/v1/heatmap?city=${encode(city)}&activityType=${encode(activityType)}", cacheKey = "heatmap_${city}_$activityType")
+
+    // Social, Clubs, Challenges
+    fun searchUsers(query: String): JSONArray =
+        executeJson("GET", "/v1/users/search?q=${encode(query)}").optJSONArray("users") ?: JSONArray()
+
+    fun fetchUserProfile(handle: String): JSONObject =
+        executeJson("GET", "/v1/users/${encode(handle)}")
+
+    fun toggleFollow(userId: String, following: Boolean): JSONObject =
+        executeJson(if (following) "DELETE" else "POST", "/v1/users/${encode(userId)}/follow")
+
+    fun fetchClubs(): JSONArray =
+        executeJson("GET", "/v1/clubs", cacheKey = "clubs").optJSONArray("clubs") ?: JSONArray()
+
+    fun createClub(name: String, city: String, sportFocus: String, description: String = ""): JSONObject =
+        executeJson(
+            "POST", "/v1/clubs",
+            JSONObject().put("name", name).put("city", city).put("sportFocus", sportFocus).put("description", description)
+        )
+
+    fun fetchClubDetail(slugOrId: String): JSONObject =
+        executeJson("GET", "/v1/clubs/${encode(slugOrId)}")
+
+    fun toggleClubMembership(clubId: String, joined: Boolean): JSONObject =
+        executeJson(if (joined) "DELETE" else "POST", "/v1/clubs/${encode(clubId)}/${if (joined) "leave" else "join"}")
+
+    fun rsvpEvent(eventId: String, going: Boolean): JSONObject =
+        executeJson("POST", "/v1/events/${encode(eventId)}/rsvp", JSONObject().put("going", going))
+
+    fun fetchChallenges(): JSONArray =
+        executeJson("GET", "/v1/challenges", cacheKey = "challenges").optJSONArray("challenges") ?: JSONArray()
+
+    fun toggleChallengeMembership(challengeId: String, joined: Boolean): JSONObject =
+        executeJson(if (joined) "DELETE" else "POST", "/v1/challenges/${encode(challengeId)}/${if (joined) "leave" else "join"}")
+
+    // Profile, Dashboard, Settings, Privacy & Export
+    fun fetchMe(): JSONObject {
+        val res = executeJson("GET", "/v1/me", cacheKey = "me")
+        res.optJSONObject("user")?.optString("id")?.takeIf { it.isNotBlank() }?.let { prefs.userId = it }
+        return res
     }
 
-    fun flagSegmentEffort(effortId: String, reason: String) {
-        val payload = JSONObject().put("reason", reason).put("requestReview", true).toString()
-        rawRequest("POST", "/v1/segments/efforts/$effortId/flag", payload)
+    fun updateProfile(displayName: String, homeCity: String, bio: String): JSONObject =
+        executeJson("PATCH", "/v1/me/profile", JSONObject().put("displayName", displayName).put("homeCity", homeCity).put("bio", bio))
+
+    fun updateSettings(theme: String? = null, language: String? = null, units: String? = null): JSONObject {
+        val body = JSONObject()
+        theme?.let { body.put("theme", it) }
+        language?.let { body.put("language", it) }
+        units?.let { body.put("units", it) }
+        return executeJson("PATCH", "/v1/me/settings", body)
     }
 
-    fun fetchNearbyRoutes(lat: Double = 12.9762, lng: Double = 77.5929): JSONObject {
-        return cachedGetJson("/v1/routes/nearby?lat=$lat&lng=$lng&radiusKm=50")
-    }
+    fun fetchDashboard(): JSONObject =
+        executeJson("GET", "/v1/analytics/dashboard", cacheKey = "dashboard")
 
-    fun fetchClubs(): JSONArray {
-        return cachedGetJson("/v1/clubs").optJSONArray("clubs") ?: JSONArray()
-    }
+    fun createGoal(period: String, targetMeters: Double): JSONObject =
+        executeJson(
+            "POST", "/v1/analytics/goals",
+            JSONObject().put("period", period).put("activityType", "all").put("metricType", "distance_m").put("targetValue", targetMeters)
+        )
 
-    fun toggleClubMembership(clubId: String, joined: Boolean) {
-        if (joined) rawRequest("DELETE", "/v1/clubs/$clubId/leave")
-        else rawRequest("POST", "/v1/clubs/$clubId/join")
-    }
+    fun createGear(name: String, gearType: String, initialDistanceM: Double): JSONObject =
+        executeJson(
+            "POST", "/v1/analytics/gear",
+            JSONObject().put("name", name).put("gearType", gearType).put("initialDistanceM", initialDistanceM)
+        )
 
-    fun fetchChallenges(): JSONArray {
-        return cachedGetJson("/v1/challenges").optJSONArray("challenges") ?: JSONArray()
-    }
+    fun fetchPrivacyZones(): JSONArray =
+        executeJson("GET", "/v1/me/privacy-zones", cacheKey = "privacy_zones").optJSONArray("privacyZones") ?: JSONArray()
 
-    fun toggleChallengeMembership(challengeId: String, joined: Boolean) {
-        if (joined) rawRequest("DELETE", "/v1/challenges/$challengeId/leave")
-        else rawRequest("POST", "/v1/challenges/$challengeId/join")
-    }
+    fun createPrivacyZone(name: String, lat: Double, lng: Double, radiusMeters: Int): JSONObject =
+        executeJson("POST", "/v1/me/privacy-zones", JSONObject().put("name", name).put("lat", lat).put("lng", lng).put("radiusMeters", radiusMeters))
 
-    fun fetchMe(): JSONObject = cachedGetJson("/v1/me")
+    fun deletePrivacyZone(id: String): JSONObject =
+        executeJson("DELETE", "/v1/me/privacy-zones/${encode(id)}")
 
-    fun fetchDashboard(): JSONObject = cachedGetJson("/v1/analytics/dashboard")
+    fun fetchNotifications(): JSONArray =
+        executeJson("GET", "/v1/me/notifications", cacheKey = "notifications").optJSONArray("notifications") ?: JSONArray()
 
-    fun fetchNotifications(): JSONArray {
-        return cachedGetJson("/v1/me/notifications").optJSONArray("notifications") ?: JSONArray()
-    }
+    fun markAllNotificationsRead(): JSONObject =
+        executeJson("POST", "/v1/me/notifications/read-all", JSONObject())
 
-    fun markAllNotificationsRead() {
-        rawRequest("POST", "/v1/me/notifications/read-all")
-    }
+    fun fetchSessions(): JSONArray =
+        executeJson("GET", "/v1/auth/sessions").optJSONArray("sessions") ?: JSONArray()
 
-    fun updateSettings(theme: String? = null, language: String? = null, units: String? = null) {
-        val obj = JSONObject()
-        if (theme != null) obj.put("theme", theme)
-        if (language != null) obj.put("language", language)
-        if (units != null) obj.put("units", units)
-        rawRequest("PATCH", "/v1/me/settings", obj.toString())
-    }
+    fun revokeSession(id: String): JSONObject =
+        executeJson("DELETE", "/v1/auth/sessions/${encode(id)}")
 
-    fun fetchPrivacyZones(): JSONArray {
-        return cachedGetJson("/v1/me/privacy-zones").optJSONArray("privacyZones") ?: JSONArray()
-    }
+    fun exportMyData(): JSONObject = executeJson("GET", "/v1/me/export")
 
-    fun createPrivacyZone(name: String, lat: Double, lng: Double, radiusMeters: Int) {
-        val obj = JSONObject()
-            .put("name", name)
-            .put("lat", lat)
-            .put("lng", lng)
-            .put("radiusMeters", radiusMeters)
-        rawRequest("POST", "/v1/me/privacy-zones", obj.toString())
-    }
-
-    fun deletePrivacyZone(id: String) {
-        rawRequest("DELETE", "/v1/me/privacy-zones/$id")
-    }
-
-    fun fetchSessions(): JSONArray {
-        return cachedGetJson("/v1/auth/sessions", bypassCache = true).optJSONArray("sessions") ?: JSONArray()
-    }
-
-    fun revokeSession(id: String) {
-        rawRequest("DELETE", "/v1/auth/sessions/$id")
-    }
-
-    fun createGoal(period: String, targetMeters: Double) {
-        val obj = JSONObject()
-            .put("period", period)
-            .put("activityType", "all")
-            .put("metricType", "distance_m")
-            .put("targetValue", targetMeters)
-        rawRequest("POST", "/v1/analytics/goals", obj.toString())
-    }
-
-    fun createGear(name: String, gearType: String) {
-        val obj = JSONObject()
-            .put("name", name)
-            .put("gearType", gearType)
-            .put("initialDistanceM", 0)
-        rawRequest("POST", "/v1/analytics/gear", obj.toString())
-    }
-
-    fun exportMyData(): JSONObject {
-        return JSONObject(rawRequest("GET", "/v1/me/export"))
-    }
-
-    fun deleteAccount() {
-        rawRequest("DELETE", "/v1/me")
-        prefs.clearSession()
-    }
+    fun deleteAccount(): JSONObject = executeJson("DELETE", "/v1/me")
 }

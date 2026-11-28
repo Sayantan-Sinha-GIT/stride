@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Stride Lite</string>
+    <string name="tab_feed">फ़ीड</string>
+    <string name="tab_explore">खोजें</string>
+    <string name="tab_record">रिकॉर्ड</string>
+    <string name="tab_clubs">क्लब</string>
+    <string name="tab_profile">प्रोफ़ाइल</string>
+    <string name="search_athletes">एथलीट खोजें</string>
+    <string name="notifications_title">सूचनाएँ</string>
+</resources>

@@ -1,277 +1,276 @@
 package com.stride.tracker.lite
 
-import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
-import android.graphics.Color
-import android.graphics.Typeface
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.view.Gravity
-import android.view.View
-import android.view.ViewGroup
-import android.widget.Button
+import android.view.MenuItem
 import android.widget.LinearLayout
-import android.widget.Toast
-import com.stride.tracker.lite.core.LitePalette
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.isVisible
+import androidx.core.view.updatePadding
+import androidx.fragment.app.Fragment
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.snackbar.Snackbar
+import com.google.android.material.textfield.TextInputEditText
+import com.stride.tracker.lite.core.Formatters
 import com.stride.tracker.lite.core.LiteStrings
-import com.stride.tracker.lite.core.LiteTheme
-import com.stride.tracker.lite.core.SecurePrefs
-import com.stride.tracker.lite.location.LiteRecorder
-import com.stride.tracker.lite.net.StrideLiteApi
-import com.stride.tracker.lite.storage.LiteStorageGuardian
-import com.stride.tracker.lite.ui.AuthScreenBuilder
-import com.stride.tracker.lite.ui.ClubsTabBuilder
-import com.stride.tracker.lite.ui.ExploreTabBuilder
-import com.stride.tracker.lite.ui.FeedTabBuilder
-import com.stride.tracker.lite.ui.ProfileTabBuilder
-import com.stride.tracker.lite.ui.RecordTabBuilder
-import java.util.concurrent.Executors
+import com.stride.tracker.lite.core.StrideAppContainer
+import com.stride.tracker.lite.databinding.ActivityMainBinding
+import com.stride.tracker.lite.ui.*
+import kotlin.concurrent.thread
 
-class MainActivity : Activity() {
-    companion object {
-        private const val REQ_GPX_PICK = 9102
-    }
-
-    private lateinit var prefs: SecurePrefs
-    private lateinit var guardian: LiteStorageGuardian
-    private lateinit var api: StrideLiteApi
-    private lateinit var recorder: LiteRecorder
-
-    private val executor = Executors.newCachedThreadPool()
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private var tabIndex = 0
-    private var rootFrame: LinearLayout? = null
+class MainActivity : AppCompatActivity() {
+    private lateinit var binding: ActivityMainBinding
+    private lateinit var authController: AuthScreenController
+    private var activeTabId: Int = R.id.nav_feed
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        StrideAppContainer.ensure(this)
+        StrideAppContainer.applyThemeMode(StrideAppContainer.prefs.themeMode)
         super.onCreate(savedInstanceState)
-        prefs = SecurePrefs(applicationContext)
-        guardian = LiteStorageGuardian(applicationContext)
-        api = StrideLiteApi(prefs, guardian)
-        recorder = LiteRecorder(applicationContext, prefs, guardian, api)
 
-        guardian.sweepTempDirs()
-        guardian.enforceCacheCap(prefs.cacheCapBytes)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
-        handleOAuthIntent(intent)
-        renderRoot()
-        checkRecoveryAndSync()
+        applySystemBarInsetsAndContrast()
+        StrideAppContainer.guardian.enforceBudget(StrideAppContainer.prefs.cacheCapBytes)
+
+        authController = AuthScreenController(
+            binding = binding.authContainer,
+            onAuthenticated = { enterAppShell() },
+            onLocaleToggled = {
+                applyNavLabels()
+                binding.tvBrandTitle.text = LiteStrings[StrideAppContainer.prefs.language, "brand"]
+            }
+        )
+        authController.bind()
+
+        binding.topBar.setOnMenuItemClickListener { item -> onToolbarMenu(item) }
+        binding.bottomNav.setOnItemSelectedListener { item ->
+            activeTabId = item.itemId
+            showTab(item.itemId)
+            true
+        }
+
+        handleIncomingUri(intent?.data)
+
+        if (StrideAppContainer.prefs.hasSession()) {
+            enterAppShell()
+        } else {
+            showAuthScreen()
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleOAuthIntent(intent)
+        handleIncomingUri(intent.data)
     }
 
     override fun onStop() {
         super.onStop()
-        if (prefs.autoPurgeOnClose) {
-            guardian.sweepTempDirs()
+        if (StrideAppContainer.prefs.autoPurgeOnClose) {
+            StrideAppContainer.guardian.clearAllCaches()
+        } else {
+            StrideAppContainer.guardian.sweepTempDirs()
         }
     }
 
-    override fun onDestroy() {
-        executor.shutdownNow()
-        super.onDestroy()
+    private fun applySystemBarInsetsAndContrast() {
+        val dark = StrideAppContainer.isDarkActive(this)
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        controller.isAppearanceLightStatusBars = !dark
+        controller.isAppearanceLightNavigationBars = !dark
+
+        val tintColor = getColor(R.color.stride_text_primary)
+        for (i in 0 until binding.topBar.menu.size()) {
+            binding.topBar.menu.getItem(i)?.icon?.mutate()?.setTint(tintColor)
+        }
+
+        ViewCompat.setOnApplyWindowInsetsListener(binding.rootCoordinator) { _, insets ->
+            val sys = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            binding.appBar.updatePadding(top = sys.top)
+            binding.bottomNav.updatePadding(bottom = sys.bottom)
+            insets
+        }
     }
 
-    private fun handleOAuthIntent(intent: Intent?) {
-        val data: Uri = intent?.data ?: return
-        if (data.scheme != "stride-lite" || data.host != "oauth") return
-        val oauthCode = data.getQueryParameter("oauthCode")
-        val err = data.getQueryParameter("error")
-        if (!err.isNullOrBlank()) {
-            Toast.makeText(this, "Google sign-in error: $err", Toast.LENGTH_LONG).show()
-            return
-        }
+    private fun handleIncomingUri(uri: Uri?) {
+        if (uri == null || uri.scheme != "stride-lite") return
+        val oauthCode = uri.getQueryParameter("oauthCode")
         if (!oauthCode.isNullOrBlank()) {
-            runBg {
-                try {
-                    api.exchangeOAuthCode(oauthCode)
-                    runUi {
-                        Toast.makeText(this, "Signed in with Google", Toast.LENGTH_SHORT).show()
-                        renderRoot()
-                        checkRecoveryAndSync()
+            thread {
+                runCatching {
+                    StrideAppContainer.api.exchangeOAuthCode(oauthCode)
+                    runOnUiThread { enterAppShell() }
+                }.onFailure { err ->
+                    runOnUiThread {
+                        Snackbar.make(binding.root, err.message ?: "Google sign-in failed", Snackbar.LENGTH_LONG).show()
                     }
-                } catch (e: Throwable) {
-                    runUi { Toast.makeText(this, e.message ?: "OAuth failed", Toast.LENGTH_LONG).show() }
                 }
             }
         }
     }
 
-    @Deprecated("Platform Activity result for lightweight GPX picker without AndroidX overhead")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_GPX_PICK && resultCode == RESULT_OK) {
-            val uri = data?.data ?: return
-            runBg {
-                try {
-                    val xml = contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
-                        ?: throw IllegalStateException("Unable to read GPX file")
-                    api.importGpxMultipart(xml, null, recorder.state.activityType, "followers")
-                    runUi { Toast.makeText(this, "GPX imported to Stride!", Toast.LENGTH_SHORT).show() }
-                } catch (e: Throwable) {
-                    runUi { Toast.makeText(this, e.message ?: "GPX import failed", Toast.LENGTH_LONG).show() }
-                }
-            }
+    fun showAuthScreen() {
+        binding.appBar.isVisible = false
+        binding.bottomNav.isVisible = false
+        binding.fragmentContainer.isVisible = false
+        binding.authContainer.root.isVisible = true
+        authController.refreshLabels()
+    }
+
+    private fun enterAppShell() {
+        binding.authContainer.root.isVisible = false
+        binding.appBar.isVisible = true
+        binding.bottomNav.isVisible = true
+        binding.fragmentContainer.isVisible = true
+        applyNavLabels()
+        updateCachePill()
+        showTab(activeTabId)
+
+        // Ensure user ID and offline sync queue flush cleanly on startup
+        thread {
+            runCatching { StrideAppContainer.api.fetchMe() }
+            runCatching { StrideAppContainer.recorder.flushPendingQueue() }
+            runOnUiThread { updateCachePill() }
         }
     }
 
-    private fun checkRecoveryAndSync() {
-        if (!prefs.hasSession()) return
-        recorder.syncPendingQueue()
-        val draft = recorder.checkUnfinishedDraft() ?: return
-        if (draft.points.isEmpty()) {
-            recorder.discardDraft(draft.clientId)
-            return
+    fun onLanguageOrThemeChanged() {
+        applyNavLabels()
+        applySystemBarInsetsAndContrast()
+        binding.tvBrandTitle.text = LiteStrings[StrideAppContainer.prefs.language, "brand"]
+    }
+
+    fun updateCachePill() {
+        val breakdown = StrideAppContainer.guardian.measureStorageBreakdown()
+        binding.tvCacheBadge.text = "${Formatters.bytes(breakdown.totalCacheBytes)} cache"
+    }
+
+    private fun applyNavLabels() {
+        val lang = StrideAppContainer.prefs.language
+        binding.tvBrandTitle.text = LiteStrings[lang, "brand"]
+        val m = binding.bottomNav.menu
+        m.findItem(R.id.nav_feed)?.title = LiteStrings[lang, "feed"]
+        m.findItem(R.id.nav_explore)?.title = LiteStrings[lang, "explore"]
+        m.findItem(R.id.nav_record)?.title = LiteStrings[lang, "record"]
+        m.findItem(R.id.nav_clubs)?.title = LiteStrings[lang, "clubs"]
+        m.findItem(R.id.nav_profile)?.title = LiteStrings[lang, "profile"]
+    }
+
+    private fun showTab(tabId: Int) {
+        val tag = "tab_$tabId"
+        val fm = supportFragmentManager
+        val existing = fm.findFragmentByTag(tag)
+        val tx = fm.beginTransaction()
+        for (frag in fm.fragments) {
+            if (frag != existing) tx.hide(frag)
         }
-        val lang = prefs.language
-        AlertDialog.Builder(this)
-            .setTitle(LiteStrings.t(lang, "recoveryTitle"))
-            .setMessage("${LiteStrings.t(lang, "recoveryBody")} (${draft.points.size} GPS pts)")
-            .setPositiveButton(LiteStrings.t(lang, "recover")) { _, _ ->
-                recorder.recoverDraft(draft)
-                tabIndex = 2
-                renderRoot()
+        val target: Fragment = existing ?: when (tabId) {
+            R.id.nav_explore -> ExploreFragment()
+            R.id.nav_record -> RecordFragment()
+            R.id.nav_clubs -> CommunityFragment()
+            R.id.nav_profile -> ProfileFragment()
+            else -> FeedFragment()
+        }
+        if (existing == null) {
+            tx.add(R.id.fragmentContainer, target, tag)
+        } else {
+            tx.show(target)
+        }
+        tx.commitNowAllowingStateLoss()
+        (target as? RefreshableTab)?.refreshContent()
+    }
+
+    private fun onToolbarMenu(item: MenuItem): Boolean = when (item.itemId) {
+        R.id.action_search -> {
+            openSearchAthletesDialog()
+            true
+        }
+        R.id.action_notifications -> {
+            openNotificationsDialog()
+            true
+        }
+        else -> false
+    }
+
+    private fun openSearchAthletesDialog() {
+        val etQuery = TextInputEditText(this).apply { hint = "Handle, name, or city..." }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(LiteStrings[StrideAppContainer.prefs.language, "searchAthletes"])
+            .setView(etQuery)
+            .setNegativeButton("Close", null)
+            .setPositiveButton("Search") { _, _ ->
+                val q = etQuery.text.toString().trim()
+                thread {
+                    val users = runCatching { StrideAppContainer.api.searchUsers(q) }.getOrNull()
+                    runOnUiThread {
+                        if (users == null || users.length() == 0) {
+                            Snackbar.make(binding.root, "No matching athletes found.", Snackbar.LENGTH_SHORT).show()
+                        } else {
+                            val names = Array(users.length()) { i ->
+                                val u = users.optJSONObject(i)
+                                "${u?.optString("display_name")} (@${u?.optString("handle")}) · ${u?.optString("home_city")}"
+                            }
+                            MaterialAlertDialogBuilder(this)
+                                .setTitle("Athletes (${names.size})")
+                                .setItems(names) { _, idx ->
+                                    val chosen = users.optJSONObject(idx) ?: return@setItems
+                                    val uid = chosen.optString("id")
+                                    thread {
+                                        runCatching {
+                                            StrideAppContainer.api.toggleFollow(uid, following = false)
+                                            runOnUiThread {
+                                                Snackbar.make(binding.root, "Follow updated for @${chosen.optString("handle")}", Snackbar.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                }
+                                .setNegativeButton("Close", null)
+                                .show()
+                        }
+                    }
+                }
             }
-            .setNegativeButton(LiteStrings.t(lang, "discard")) { _, _ ->
-                recorder.discardDraft(draft.clientId)
-            }
-            .setCancelable(false)
             .show()
     }
 
-    private fun renderRoot() {
-        val palette = LiteTheme.resolve(this, prefs.themeMode)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            window.statusBarColor = palette.surface
-            window.navigationBarColor = palette.surface
-        }
-
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(palette.bg)
-            fitsSystemWindows = true
-        }
-        rootFrame = container
-
-        if (!prefs.hasSession()) {
-            val authView = AuthScreenBuilder(
-                context = this,
-                palette = palette,
-                prefs = prefs,
-                api = api,
-                runBg = ::runBg,
-                runUi = ::runUi,
-                onSignedIn = {
-                    renderRoot()
-                    checkRecoveryAndSync()
+    private fun openNotificationsDialog() {
+        val lang = StrideAppContainer.prefs.language
+        thread {
+            val arr = runCatching { StrideAppContainer.api.fetchNotifications() }.getOrNull()
+            runOnUiThread {
+                val col = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    val pad = (resources.displayMetrics.density * 18).toInt()
+                    setPadding(pad, pad / 2, pad, 0)
                 }
-            ).build()
-            container.addView(authView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-            setContentView(container)
-            return
-        }
-
-        val lang = prefs.language
-        val padH = LiteTheme.dp(this, 14)
-        val padV = LiteTheme.dp(this, 10)
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setBackgroundColor(palette.surface)
-            setPadding(padH, padV, padH, padV)
-        }
-        header.addView(
-            LiteTheme.label(this@MainActivity, palette, "Stride Lite", 19f, bold = true),
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        )
-        val b = guardian.measureStorageBreakdown(prefs.cacheCapBytes)
-        val memBadge = String.format(java.util.Locale.US, "%.0f KB cache", b.totalManagedBytes / 1024.0)
-        header.addView(LiteTheme.label(this@MainActivity, palette, memBadge, 11.5f, bold = true, colorOverride = palette.secondary))
-        container.addView(header)
-
-        val contentView: View = when (tabIndex) {
-            0 -> FeedTabBuilder(this, palette, prefs, api, ::runBg, ::runUi).build()
-            1 -> ExploreTabBuilder(this, palette, prefs, api, ::runBg, ::runUi).build()
-            2 -> RecordTabBuilder(this, palette, prefs, api, recorder, ::runBg, ::runUi) {
-                val i = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "*/*"
-                }
-                @Suppress("DEPRECATION")
-                startActivityForResult(i, REQ_GPX_PICK)
-            }.build()
-            3 -> ClubsTabBuilder(this, palette, prefs, api, ::runBg, ::runUi).build()
-            else -> ProfileTabBuilder(
-                context = this,
-                palette = palette,
-                prefs = prefs,
-                guardian = guardian,
-                api = api,
-                runBg = ::runBg,
-                runUi = ::runUi,
-                onAppearanceOrLocaleChanged = { renderRoot() },
-                onSignOut = {
-                    prefs.clearSession()
-                    guardian.clearAllCaches()
-                    tabIndex = 0
-                    renderRoot()
-                }
-            ).build()
-        }
-        container.addView(contentView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        container.addView(buildBottomNav(palette, lang))
-        setContentView(container)
-    }
-
-    private fun buildBottomNav(palette: LitePalette, lang: String): View {
-        val nav = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(palette.surface)
-            val vp = LiteTheme.dp(this@MainActivity, 6)
-            setPadding(LiteTheme.dp(this@MainActivity, 4), vp, LiteTheme.dp(this@MainActivity, 4), vp)
-        }
-        val items = listOf(
-            LiteStrings.t(lang, "tabFeed"),
-            LiteStrings.t(lang, "tabExplore"),
-            LiteStrings.t(lang, "tabRecord"),
-            LiteStrings.t(lang, "tabClubs"),
-            LiteStrings.t(lang, "tabProfile"),
-        )
-        items.forEachIndexed { idx, label ->
-            val selected = idx == tabIndex
-            val btn = Button(this).apply {
-                text = label
-                isAllCaps = false
-                textSize = 11.5f
-                setTypeface(typeface, if (selected) Typeface.BOLD else Typeface.NORMAL)
-                setTextColor(if (selected) palette.accent else palette.textSecondary)
-                setBackgroundColor(Color.TRANSPARENT)
-                minHeight = LiteTheme.dp(this@MainActivity, 44)
-                setPadding(0, 0, 0, 0)
-                setOnClickListener {
-                    if (tabIndex != idx) {
-                        tabIndex = idx
-                        renderRoot()
+                if (arr == null || arr.length() == 0) {
+                    col.addView(TextView(this).apply { text = "All caught up!" })
+                } else {
+                    for (i in 0 until minOf(arr.length(), 10)) {
+                        val n = arr.optJSONObject(i) ?: continue
+                        val msg = if (lang == "hi") n.optString("body_hi").ifBlank { n.optString("body_en") } else n.optString("body_en")
+                        col.addView(TextView(this).apply {
+                            text = "• $msg"
+                            setPadding(0, 6, 0, 6)
+                        })
                     }
                 }
+                MaterialAlertDialogBuilder(this)
+                    .setTitle(LiteStrings[lang, "notificationsTitle"])
+                    .setView(col)
+                    .setNegativeButton("Close", null)
+                    .setPositiveButton(LiteStrings[lang, "markAllRead"]) { _, _ ->
+                        thread { runCatching { StrideAppContainer.api.markAllNotificationsRead() } }
+                    }
+                    .show()
             }
-            nav.addView(btn, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
-        return nav
-    }
-
-    private fun runBg(block: () -> Unit) {
-        executor.execute(block)
-    }
-
-    private fun runUi(block: () -> Unit) {
-        mainHandler.post(block)
     }
 }

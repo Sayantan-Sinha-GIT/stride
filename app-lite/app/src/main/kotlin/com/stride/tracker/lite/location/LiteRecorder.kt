@@ -2,339 +2,251 @@ package com.stride.tracker.lite.location
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
-import android.os.Bundle
-import android.os.Handler
+import android.os.Build
 import android.os.Looper
-import com.stride.tracker.lite.core.LitePoint
-import com.stride.tracker.lite.core.ProcessedMetrics
-import com.stride.tracker.lite.core.SecurePrefs
+import android.os.SystemClock
+import com.stride.tracker.lite.core.GpsPoint
+import com.stride.tracker.lite.core.ProcessedSummary
 import com.stride.tracker.lite.core.TrackProcessorLite
 import com.stride.tracker.lite.net.StrideLiteApi
 import com.stride.tracker.lite.service.LiteTrackingService
-import com.stride.tracker.lite.storage.LiteDraftSession
+import com.stride.tracker.lite.storage.ActiveDraft
 import com.stride.tracker.lite.storage.LiteStorageGuardian
 import org.json.JSONArray
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import java.util.UUID
-import kotlin.math.max
 
-enum class LitePhase { IDLE, RECORDING, PAUSED, AUTO_PAUSED }
-
-data class RecorderUiState(
-    val clientId: String? = null,
-    val phase: LitePhase = LitePhase.IDLE,
-    val activityType: String = "run",
-    val autoPauseEnabled: Boolean = true,
-    val simMode: Boolean = false,
-    val points: List<LitePoint> = emptyList(),
-    val metrics: ProcessedMetrics = ProcessedMetrics(0.0, 0, 0, 0.0, 0.0, 0),
-    val lastSpeedMps: Double = 0.0,
-    val pendingQueueCount: Int = 0,
+data class RecordingSnapshot(
+    val active: Boolean = false,
+    val paused: Boolean = false,
+    val sport: String = "run",
+    val clientId: String = "",
+    val points: List<GpsPoint> = emptyList(),
+    val summary: ProcessedSummary = TrackProcessorLite.summarize(emptyList(), "run"),
+    val wallElapsedS: Int = 0
 )
 
 class LiteRecorder(
     private val context: Context,
-    private val prefs: SecurePrefs,
     private val guardian: LiteStorageGuardian,
-    private val api: StrideLiteApi,
+    private val api: StrideLiteApi
 ) {
-    var state = RecorderUiState(pendingQueueCount = guardian.pendingSyncs().size)
-        private set
+    private val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+    private var activeClientId: String? = null
+    private var sport: String = "run"
+    private var title: String = "Outdoor Session"
+    private var startedAtMs: Long = 0L
+    private var paused: Boolean = false
+    private val points = mutableListOf<GpsPoint>()
+    private var listener: ((RecordingSnapshot) -> Unit)? = null
+    private var lastNotificationSec = -1L
 
-    var onStateChanged: ((RecorderUiState) -> Unit)? = null
+    private val gpsListener = LocationListener { loc -> onLocation(loc) }
 
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private var locationManager: LocationManager? = null
-    private var listener: LocationListener? = null
-    private var simRunnable: Runnable? = null
-    private var simStep = 0
-
-    private val simWaypoints = listOf(
-        12.9762 to 77.5929,
-        12.9792 to 77.5955,
-        12.9788 to 77.5992,
-        12.9746 to 77.6004,
-        12.9718 to 77.5968,
-        12.9756 to 77.5923,
-    )
-
-    fun setActivityType(type: String) {
-        state = state.copy(activityType = type)
-        notifyUi()
+    fun setListener(cb: ((RecordingSnapshot) -> Unit)?) {
+        listener = cb
+        emit()
     }
 
-    fun setAutoPause(enabled: Boolean) {
-        state = state.copy(autoPauseEnabled = enabled)
-        notifyUi()
-    }
-
-    fun setSimMode(enabled: Boolean) {
-        state = state.copy(simMode = enabled)
-        notifyUi()
-    }
-
-    fun checkUnfinishedDraft(): LiteDraftSession? = guardian.loadUnfinishedSession()
-
-    fun recoverDraft(draft: LiteDraftSession) {
-        val m = TrackProcessorLite.process(draft.points, draft.activityType)
-        state = state.copy(
-            clientId = draft.clientId,
-            activityType = draft.activityType,
-            phase = LitePhase.PAUSED,
-            points = draft.points,
-            metrics = m,
-            pendingQueueCount = guardian.pendingSyncs().size,
-        )
-        notifyUi()
-    }
+    fun checkDraft(): ActiveDraft? = guardian.loadActiveDraft()
 
     fun discardDraft(clientId: String) {
-        guardian.clearActiveSession(clientId)
-        state = RecorderUiState(
-            activityType = state.activityType,
-            autoPauseEnabled = state.autoPauseEnabled,
-            simMode = state.simMode,
-            pendingQueueCount = guardian.pendingSyncs().size,
+        guardian.deleteDraft(clientId)
+    }
+
+    fun recoverDraft(draft: ActiveDraft) {
+        activeClientId = draft.clientId
+        sport = draft.activityType
+        title = draft.title
+        startedAtMs = draft.startedAtMs
+        paused = draft.paused
+        points.clear()
+        points.addAll(draft.points)
+        emit()
+        if (!paused) startLocationUpdates()
+    }
+
+    fun currentSnapshot(): RecordingSnapshot {
+        val summary = TrackProcessorLite.summarize(points.toList(), sport)
+        val wallS = if (startedAtMs > 0L) ((System.currentTimeMillis() - startedAtMs) / 1000L).toInt().coerceAtLeast(0) else 0
+        return RecordingSnapshot(
+            active = activeClientId != null,
+            paused = paused,
+            sport = sport,
+            clientId = activeClientId ?: "",
+            points = summary.points,
+            summary = summary,
+            wallElapsedS = maxOf(wallS, summary.elapsedTimeS)
         )
-        notifyUi()
     }
 
     @SuppressLint("MissingPermission")
-    fun startRecording(useSimulator: Boolean = state.simMode) {
-        val cid = state.clientId ?: UUID.randomUUID().toString()
-        val now = System.currentTimeMillis()
-        guardian.startOrUpdateSession(cid, state.activityType, now, paused = false)
-        state = state.copy(clientId = cid, phase = LitePhase.RECORDING, simMode = useSimulator)
-        notifyUi()
+    fun start(selectedSport: String, customTitle: String) {
+        val cid = UUID.randomUUID().toString()
+        activeClientId = cid
+        sport = selectedSport
+        title = customTitle.ifBlank { "Outdoor ${selectedSport.replaceFirstChar { it.uppercase() }}" }
+        startedAtMs = System.currentTimeMillis()
+        paused = false
+        points.clear()
+        guardian.saveSession(cid, sport, title, startedAtMs, paused = false)
+        startForegroundService()
+        startLocationUpdates()
+        emit()
+    }
 
-        LiteTrackingService.start(context, state.activityType)
-
-        if (useSimulator) {
-            stopLocationUpdatesOnly()
-            simRunnable?.let { mainHandler.removeCallbacks(it) }
-            val r = object : Runnable {
-                override fun run() {
-                    emitSimulatedPoint()
-                    if (state.phase == LitePhase.RECORDING) {
-                        mainHandler.postDelayed(this, 1000L)
-                    }
-                }
-            }
-            simRunnable = r
-            mainHandler.postDelayed(r, 800L)
-            return
+    fun togglePause() {
+        val cid = activeClientId ?: return
+        paused = !paused
+        guardian.saveSession(cid, sport, title, startedAtMs, paused)
+        if (paused) {
+            runCatching { locationManager.removeUpdates(gpsListener) }
+        } else {
+            startLocationUpdates()
         }
+        emit()
+    }
 
-        try {
-            val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            locationManager = lm
-            val minDist = when (state.activityType) {
-                "ride" -> if (prefs.dataSaver) 12f else 8f
-                "walk", "hike" -> if (prefs.dataSaver) 6f else 4f
-                else -> if (prefs.dataSaver) 6f else 3f
+    @SuppressLint("MissingPermission")
+    private fun startLocationUpdates() {
+        runCatching {
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1500L, 1.5f, gpsListener, Looper.getMainLooper())
             }
-            val l = object : LocationListener {
-                override fun onLocationChanged(loc: Location) {
-                    ingestPosition(
-                        lat = loc.latitude,
-                        lng = loc.longitude,
-                        altitude = if (loc.hasAltitude()) loc.altitude else 0.0,
-                        speedMps = if (loc.hasSpeed()) loc.speed.toDouble() else 0.0,
-                        accuracyM = if (loc.hasAccuracy()) loc.accuracy.toDouble() else 5.0,
-                        timestampMs = loc.time,
-                    )
-                }
-
-                @Deprecated("Deprecated in Android SDK 29")
-                override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
-                override fun onProviderEnabled(provider: String) = Unit
-                override fun onProviderDisabled(provider: String) = Unit
+            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 3000L, 3f, gpsListener, Looper.getMainLooper())
             }
-            listener = l
-            if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1500L, minDist, l, Looper.getMainLooper())
+            locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)?.let { loc ->
+                val ageMs = (SystemClock.elapsedRealtimeNanos() - loc.elapsedRealtimeNanos) / 1_000_000L
+                if (ageMs in 0..15000) onLocation(loc)
             }
-            if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 3000L, minDist * 2, l, Looper.getMainLooper())
-            }
-        } catch (_: Throwable) {
-            // Permission absent or no provider enabled — handled gracefully
         }
     }
 
-    fun ingestPosition(
-        lat: Double,
-        lng: Double,
-        altitude: Double = 0.0,
-        speedMps: Double = 0.0,
-        accuracyM: Double = 5.0,
-        timestampMs: Long? = null,
-    ) {
-        if (state.phase != LitePhase.RECORDING && state.phase != LitePhase.AUTO_PAUSED) return
-        val wallNow = System.currentTimeMillis()
-        val prev = state.points.lastOrNull()
-        var fixTime = timestampMs ?: wallNow
-        if (prev != null && fixTime <= prev.timeMs) {
-            fixTime = max(wallNow, prev.timeMs + 1000L)
-        }
-
-        var effSpeed = if (speedMps.isFinite() && speedMps > 0.0) speedMps else 0.0
-        if (prev != null) {
-            val d = TrackProcessorLite.haversineMeters(prev.lat, prev.lng, lat, lng)
-            val dtS = max(0.5, (fixTime - prev.timeMs) / 1000.0)
-            val derived = d / dtS
-            if (derived > effSpeed) effSpeed = derived
-            if (d < 0.8 && state.autoPauseEnabled && effSpeed < 0.45 && state.points.size > 3) {
-                state = state.copy(phase = LitePhase.AUTO_PAUSED, lastSpeedMps = effSpeed)
-                notifyUi()
-                return
-            }
-        }
-        if (state.autoPauseEnabled && effSpeed < 0.45 && state.points.size > 3) {
-            state = state.copy(phase = LitePhase.AUTO_PAUSED, lastSpeedMps = effSpeed)
-            notifyUi()
-            return
-        }
-
-        appendPoint(
-            LitePoint(
-                lat = lat,
-                lng = lng,
-                ele = altitude,
-                timeMs = fixTime,
-                accuracyM = if (accuracyM > 0.0) accuracyM else 5.0,
-            ),
-            effSpeed
+    private fun onLocation(loc: Location) {
+        val cid = activeClientId ?: return
+        if (paused) return
+        val maxAcc = if (sport == "ride") 55f else 40f
+        if (loc.hasAccuracy() && loc.accuracy > maxAcc) return
+        val pt = GpsPoint(
+            lat = loc.latitude,
+            lng = loc.longitude,
+            ele = if (loc.hasAltitude()) loc.altitude else null,
+            timeMs = System.currentTimeMillis(),
+            accuracyM = if (loc.hasAccuracy()) loc.accuracy.toDouble() else null
         )
-    }
-
-    private fun emitSimulatedPoint() {
-        val step = simStep++
-        val leg = (step / 5) % (simWaypoints.size - 1)
-        val t = (step % 5) / 5.0
-        val p1 = simWaypoints[leg]
-        val p2 = simWaypoints[leg + 1]
-        appendPoint(
-            LitePoint(
-                lat = p1.first + (p2.first - p1.first) * t,
-                lng = p1.second + (p2.second - p1.second) * t,
-                ele = 920.0 + (step % 6),
-                timeMs = System.currentTimeMillis(),
-                accuracyM = 5.0,
-            ),
-            3.2
-        )
-    }
-
-    private fun appendPoint(pt: LitePoint, speedMps: Double) {
-        val cid = state.clientId ?: return
+        val prev = points.lastOrNull()
+        if (prev != null && pt.timeMs <= prev.timeMs + 250L) return
+        points.add(pt)
         guardian.appendPoint(cid, pt)
-        val updated = state.points + pt
-        val metrics = TrackProcessorLite.process(updated, state.activityType)
-        state = state.copy(
-            phase = LitePhase.RECORDING,
-            points = updated,
-            metrics = metrics,
-            lastSpeedMps = speedMps,
-        )
-        notifyUi()
-    }
+        emit()
 
-    fun pauseRecording() {
-        stopLocationUpdatesOnly()
-        simRunnable?.let { mainHandler.removeCallbacks(it) }
-        state.clientId?.let { cid ->
-            guardian.startOrUpdateSession(
-                cid,
-                state.activityType,
-                state.points.firstOrNull()?.timeMs ?: System.currentTimeMillis(),
-                paused = true
-            )
+        val nowSec = System.currentTimeMillis() / 2000L
+        if (nowSec != lastNotificationSec) {
+            lastNotificationSec = nowSec
+            startForegroundService()
         }
-        state = state.copy(phase = LitePhase.PAUSED)
-        notifyUi()
     }
 
-    fun resumeRecording() {
-        startRecording(state.simMode)
-    }
+    fun finishAndEnqueueOrSync(customTitle: String): Pair<Boolean, String?> {
+        val cid = activeClientId ?: return false to null
+        val summary = TrackProcessorLite.summarize(points.toList(), sport)
+        val rawPts = if (summary.points.size >= 2) summary.points else points.toList()
+        stopInternal()
 
-    fun stopAndSave(title: String, visibility: String = "followers", onDone: (Boolean, String?) -> Unit) {
-        stopLocationUpdatesOnly()
-        simRunnable?.let { mainHandler.removeCallbacks(it) }
-        LiteTrackingService.stop(context)
-
-        val cid = state.clientId
-        if (cid == null || state.points.size < 2) {
-            if (cid != null) guardian.clearActiveSession(cid)
-            state = RecorderUiState(
-                activityType = state.activityType,
-                autoPauseEnabled = state.autoPauseEnabled,
-                pendingQueueCount = guardian.pendingSyncs().size,
-            )
-            notifyUi()
-            onDone(false, "Record at least 2 GPS points before saving.")
-            return
+        if (rawPts.size < 2) {
+            guardian.deleteDraft(cid)
+            emit()
+            return false to null
         }
 
-        val ptsArray = JSONArray()
-        for (p in state.points) ptsArray.put(p.toJson())
+        val finalTitle = customTitle.ifBlank { title }
+        val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }
+        val ptsJson = JSONArray()
+        for (p in rawPts) {
+            ptsJson.put(
+                JSONObject()
+                    .put("lat", p.lat)
+                    .put("lng", p.lng)
+                    .put("ele", p.ele ?: JSONObject.NULL)
+                    .put("time", p.timeMs)
+                    .put("accuracyM", p.accuracyM ?: JSONObject.NULL)
+            )
+        }
         val payload = JSONObject()
             .put("clientId", cid)
-            .put("title", if (title.isBlank()) "Stride ${state.activityType}" else title.trim())
-            .put("activityType", state.activityType)
+            .put("title", finalTitle)
+            .put("activityType", sport)
             .put("source", "recorded")
-            .put("visibility", visibility)
-            .put("points", ptsArray)
-            .toString()
+            .put("visibility", "followers")
+            .put("startedAt", iso.format(Date(startedAtMs)))
+            .put("durationS", summary.movingTimeS.coerceAtLeast(1))
+            .put("distanceM", summary.distanceM)
+            .put("elevationGainM", summary.elevationGainM)
+            .put("points", ptsJson)
 
-        guardian.enqueueSync(cid, payload)
-        guardian.clearActiveSession(cid)
-        state = RecorderUiState(
-            activityType = state.activityType,
-            autoPauseEnabled = state.autoPauseEnabled,
-            pendingQueueCount = guardian.pendingSyncs().size,
-        )
-        notifyUi()
-
-        syncPendingQueue(onDone)
+        return try {
+            val res = api.uploadActivityRaw(cid, payload)
+            guardian.deleteDraft(cid)
+            val createdId = res.optJSONObject("activity")?.optString("id") ?: res.optString("id").takeIf { it.isNotBlank() }
+            emit()
+            true to createdId
+        } catch (_: Throwable) {
+            guardian.enqueueSync(cid, payload.toString())
+            guardian.deleteDraft(cid)
+            emit()
+            false to null
+        }
     }
 
-    fun syncPendingQueue(onDone: ((Boolean, String?) -> Unit)? = null) {
-        Thread {
-            val pending = guardian.pendingSyncs()
-            var ok = true
-            var lastErr: String? = null
-            for (item in pending) {
-                try {
-                    api.uploadActivityIdempotent(item.clientId, item.payloadJson)
-                    guardian.markSynced(item.clientId)
-                } catch (e: Throwable) {
-                    ok = false
-                    lastErr = e.message
-                    guardian.recordSyncFailure(item.clientId, e.message ?: "sync failed")
-                }
+    fun flushPendingQueue(): Int {
+        var synced = 0
+        for (row in guardian.listPendingSync()) {
+            try {
+                api.uploadActivityRaw(row.clientId, JSONObject(row.payloadJson))
+                guardian.removePendingSync(row.clientId)
+                synced++
+            } catch (_: Throwable) {
+                guardian.incrementSyncAttempt(row.clientId)
             }
-            mainHandler.post {
-                state = state.copy(pendingQueueCount = guardian.pendingSyncs().size)
-                notifyUi()
-                onDone?.invoke(ok, lastErr)
+        }
+        return synced
+    }
+
+    private fun stopInternal() {
+        runCatching { locationManager.removeUpdates(gpsListener) }
+        activeClientId = null
+        paused = false
+        runCatching { context.stopService(Intent(context, LiteTrackingService::class.java)) }
+    }
+
+    private fun startForegroundService() {
+        val snap = currentSnapshot()
+        val intent = Intent(context, LiteTrackingService::class.java).apply {
+            putExtra("distanceM", snap.summary.distanceM)
+            putExtra("elapsedS", snap.wallElapsedS)
+            putExtra("pts", snap.points.size)
+        }
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
             }
-        }.start()
+        }
     }
 
-    private fun stopLocationUpdatesOnly() {
-        val l = listener ?: return
-        try {
-            locationManager?.removeUpdates(l)
-        } catch (_: Throwable) {}
-        listener = null
-    }
-
-    private fun notifyUi() {
-        mainHandler.post { onStateChanged?.invoke(state) }
+    fun emit() {
+        listener?.invoke(currentSnapshot())
     }
 }

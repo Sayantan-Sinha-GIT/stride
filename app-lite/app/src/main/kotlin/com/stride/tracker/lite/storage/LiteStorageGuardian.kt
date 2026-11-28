@@ -4,63 +4,80 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
-import com.stride.tracker.lite.core.LitePoint
+import android.graphics.Bitmap
+import android.util.LruCache
+import com.stride.tracker.lite.core.GpsPoint
 import java.io.File
-
-data class LiteDraftSession(
-    val clientId: String,
-    val activityType: String,
-    val startedAtMs: Long,
-    val paused: Boolean,
-    val points: List<LitePoint>,
-)
-
-data class PendingSyncItem(
-    val clientId: String,
-    val payloadJson: String,
-    val attempts: Int,
-)
 
 data class StorageBreakdown(
     val httpCacheBytes: Long,
-    val sqliteFileBytes: Long,
-    val tempDirBytes: Long,
-    val pendingQueueCount: Int,
-    val capBytes: Long,
+    val tileCacheBytes: Long,
+    val dbBytes: Long,
+    val tempBytes: Long,
+    val pendingQueueCount: Int
 ) {
-    val totalManagedBytes: Long get() = httpCacheBytes + tempDirBytes
+    val totalCacheBytes: Long get() = httpCacheBytes + tileCacheBytes
 }
 
-/**
- * Pure JVM-testable LRU eviction planner for hard-bounded cache enforcement.
- */
-object LiteCacheEvictor {
-    data class Entry(val key: String, val sizeBytes: Long, val updatedAtMs: Long)
+data class ActiveDraft(
+    val clientId: String,
+    val activityType: String,
+    val title: String,
+    val startedAtMs: Long,
+    val paused: Boolean,
+    val points: List<GpsPoint>
+)
 
-    fun keysToEvict(entries: List<Entry>, maxBytes: Long): List<String> {
-        if (maxBytes <= 0) return entries.map { it.key }
-        var total = entries.sumOf { it.sizeBytes }
-        if (total <= maxBytes) return emptyList()
-        val ordered = entries.sortedWith(compareBy<Entry> { it.updatedAtMs }.thenBy { it.key })
-        val victims = mutableListOf<String>()
-        for (e in ordered) {
+data class PendingSyncRow(
+    val clientId: String,
+    val payloadJson: String,
+    val createdAtMs: Long,
+    val attempts: Int
+)
+
+object LiteCacheEvictor {
+    fun directorySize(dir: File): Long {
+        if (!dir.exists()) return 0L
+        return dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+    }
+
+    fun enforceCap(dir: File, maxBytes: Long): Long {
+        if (!dir.exists()) return 0L
+        val files = dir.walkTopDown().filter { it.isFile }.toMutableList()
+        var total = files.sumOf { it.length() }
+        if (total <= maxBytes) return total
+        files.sortBy { it.lastModified() }
+        for (f in files) {
             if (total <= maxBytes) break
-            victims.add(e.key)
-            total -= e.sizeBytes
+            val len = f.length()
+            if (f.delete()) {
+                total -= len
+            }
         }
-        return victims
+        return total.coerceAtLeast(0L)
+    }
+
+    fun clearDirectory(dir: File) {
+        if (!dir.exists()) return
+        dir.listFiles()?.forEach { child ->
+            if (child.isDirectory) clearDirectory(child)
+            child.delete()
+        }
     }
 }
 
-/**
- * Hard-capped SQLite cache + crash-safe active recording store + OS temp sweeper.
- * Uses PRAGMA auto_vacuum = FULL and compacts automatically after queue drains.
- */
-class LiteStorageGuardian(private val appContext: Context) :
-    SQLiteOpenHelper(appContext, DB_NAME, null, DB_VERSION) {
+class LiteStorageGuardian(private val context: Context) :
+    SQLiteOpenHelper(context.applicationContext, DB_NAME, null, DB_VERSION) {
+
+    val httpCacheDir = File(context.applicationContext.filesDir, "lite_http_cache").apply { mkdirs() }
+    val tileCacheDir = File(context.applicationContext.filesDir, "lite_tile_cache").apply { mkdirs() }
+
+    val tileMemCache: LruCache<String, Bitmap> = object : LruCache<String, Bitmap>(4 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.allocationByteCount
+    }
 
     companion object {
-        private const val DB_NAME = "stride_lite.db"
+        private const val DB_NAME = "stride_lite_v2.db"
         private const val DB_VERSION = 1
     }
 
@@ -72,46 +89,36 @@ class LiteStorageGuardian(private val appContext: Context) :
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """
-            CREATE TABLE IF NOT EXISTS http_cache (
-                cache_key TEXT PRIMARY KEY,
-                body_json TEXT NOT NULL,
-                size_bytes INTEGER NOT NULL,
-                updated_at_ms INTEGER NOT NULL
-            )
-            """.trimIndent()
-        )
-        db.execSQL("CREATE INDEX IF NOT EXISTS idx_http_cache_lru ON http_cache(updated_at_ms)")
-        db.execSQL(
-            """
             CREATE TABLE IF NOT EXISTS active_session (
-                client_id TEXT PRIMARY KEY,
-                activity_type TEXT NOT NULL,
-                started_at_ms INTEGER NOT NULL,
-                paused INTEGER NOT NULL DEFAULT 0
+              client_id TEXT PRIMARY KEY,
+              activity_type TEXT NOT NULL,
+              title TEXT NOT NULL,
+              started_at_ms INTEGER NOT NULL,
+              paused INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent()
         )
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS active_points (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                client_id TEXT NOT NULL,
-                lat REAL NOT NULL,
-                lng REAL NOT NULL,
-                ele REAL NOT NULL,
-                time_ms INTEGER NOT NULL,
-                accuracy_m REAL
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              client_id TEXT NOT NULL,
+              lat REAL NOT NULL,
+              lng REAL NOT NULL,
+              ele REAL,
+              time_ms INTEGER NOT NULL,
+              accuracy_m REAL
             )
             """.trimIndent()
         )
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_active_points_cid ON active_points(client_id)")
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS sync_queue (
-                client_id TEXT PRIMARY KEY,
-                payload_json TEXT NOT NULL,
-                attempts INTEGER NOT NULL DEFAULT 0,
-                last_error TEXT,
-                created_at_ms INTEGER NOT NULL
+              client_id TEXT PRIMARY KEY,
+              payload_json TEXT NOT NULL,
+              created_at_ms INTEGER NOT NULL,
+              attempts INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent()
         )
@@ -119,237 +126,152 @@ class LiteStorageGuardian(private val appContext: Context) :
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
 
-    @Synchronized
-    fun putCache(key: String, bodyJson: String, capBytes: Long) {
-        val db = writableDatabase
-        val now = System.currentTimeMillis()
-        val sizeBytes = bodyJson.toByteArray(Charsets.UTF_8).size.toLong()
-        if (sizeBytes > capBytes) {
-            return
-        }
-        val cv = ContentValues().apply {
-            put("cache_key", key)
-            put("body_json", bodyJson)
-            put("size_bytes", sizeBytes)
-            put("updated_at_ms", now)
-        }
-        db.insertWithOnConflict("http_cache", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
-        enforceCacheCapLocked(db, capBytes)
+    fun putHttpCache(key: String, json: String, capBytes: Long) {
+        val safeKey = key.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+        val file = File(httpCacheDir, "$safeKey.json")
+        file.writeText(json, Charsets.UTF_8)
+        file.setLastModified(System.currentTimeMillis())
+        enforceBudget(capBytes)
     }
 
-    @Synchronized
-    fun getCache(key: String): String? {
-        val db = writableDatabase
-        val c = db.rawQuery("SELECT body_json FROM http_cache WHERE cache_key = ? LIMIT 1", arrayOf(key))
-        c.use {
-            if (!it.moveToFirst()) return null
-            val body = it.getString(0)
-            val touch = ContentValues().apply { put("updated_at_ms", System.currentTimeMillis()) }
-            db.update("http_cache", touch, "cache_key = ?", arrayOf(key))
-            return body
-        }
+    fun getHttpCache(key: String): String? {
+        val safeKey = key.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+        val file = File(httpCacheDir, "$safeKey.json")
+        if (!file.exists()) return null
+        file.setLastModified(System.currentTimeMillis())
+        return file.readText(Charsets.UTF_8)
     }
 
-    @Synchronized
-    fun enforceCacheCap(capBytes: Long) {
-        enforceCacheCapLocked(writableDatabase, capBytes)
+    fun enforceBudget(totalCapBytes: Long) {
+        val httpBudget = (totalCapBytes * 0.55).toLong().coerceAtLeast(256L * 1024L)
+        val tileBudget = (totalCapBytes - httpBudget).coerceAtLeast(256L * 1024L)
+        LiteCacheEvictor.enforceCap(httpCacheDir, httpBudget)
+        LiteCacheEvictor.enforceCap(tileCacheDir, tileBudget)
     }
 
-    private fun enforceCacheCapLocked(db: SQLiteDatabase, capBytes: Long) {
-        val entries = mutableListOf<LiteCacheEvictor.Entry>()
-        db.rawQuery("SELECT cache_key, size_bytes, updated_at_ms FROM http_cache", null).use { c ->
-            while (c.moveToNext()) {
-                entries.add(LiteCacheEvictor.Entry(c.getString(0), c.getLong(1), c.getLong(2)))
-            }
-        }
-        val victims = LiteCacheEvictor.keysToEvict(entries, capBytes)
-        if (victims.isEmpty()) return
-        db.beginTransaction()
-        try {
-            for (k in victims) {
-                db.delete("http_cache", "cache_key = ?", arrayOf(k))
-            }
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
-        }
-    }
-
-    @Synchronized
     fun clearAllCaches(): Long {
-        val before = measureStorageBreakdown(0).totalManagedBytes
-        val db = writableDatabase
-        db.delete("http_cache", null, null)
-        try {
-            db.execSQL("VACUUM")
-        } catch (_: Throwable) {}
-        purgeDirectoryContents(appContext.cacheDir)
-        purgeDirectoryContents(appContext.codeCacheDir)
-        appContext.externalCacheDir?.let { purgeDirectoryContents(it) }
-        val after = measureStorageBreakdown(0).totalManagedBytes
-        return (before - after).coerceAtLeast(0L)
+        val before = measureStorageBreakdown().let { it.httpCacheBytes + it.tileCacheBytes + it.tempBytes }
+        tileMemCache.evictAll()
+        LiteCacheEvictor.clearDirectory(httpCacheDir)
+        LiteCacheEvictor.clearDirectory(tileCacheDir)
+        sweepTempDirs()
+        compactDatabase()
+        return before
     }
 
-    @Synchronized
     fun sweepTempDirs() {
-        purgeDirectoryContents(appContext.cacheDir)
-        appContext.externalCacheDir?.let { purgeDirectoryContents(it) }
+        LiteCacheEvictor.clearDirectory(context.applicationContext.cacheDir)
+        context.applicationContext.externalCacheDir?.let { LiteCacheEvictor.clearDirectory(it) }
     }
 
-    @Synchronized
-    fun measureStorageBreakdown(capBytes: Long): StorageBreakdown {
-        val db = readableDatabase
-        var httpBytes = 0L
-        db.rawQuery("SELECT COALESCE(SUM(size_bytes), 0) FROM http_cache", null).use { c ->
-            if (c.moveToFirst()) httpBytes = c.getLong(0)
+    fun compactDatabase() {
+        try {
+            writableDatabase.execSQL("VACUUM")
+        } catch (_: Throwable) {
         }
-        var queueCount = 0
-        db.rawQuery("SELECT COUNT(*) FROM sync_queue", null).use { c ->
-            if (c.moveToFirst()) queueCount = c.getInt(0)
-        }
-        val dbFile = appContext.getDatabasePath(DB_NAME)
-        val sqliteBytes = if (dbFile.exists()) dbFile.length() else 0L
-        val tempBytes = dirSize(appContext.cacheDir) +
-            dirSize(appContext.codeCacheDir) +
-            (appContext.externalCacheDir?.let { dirSize(it) } ?: 0L)
-        return StorageBreakdown(httpBytes, sqliteBytes, tempBytes, queueCount, capBytes)
     }
 
-    @Synchronized
-    fun startOrUpdateSession(clientId: String, activityType: String, startedAtMs: Long, paused: Boolean = false) {
+    fun measureStorageBreakdown(): StorageBreakdown {
+        val dbFile = context.applicationContext.getDatabasePath(DB_NAME)
+        val temp = LiteCacheEvictor.directorySize(context.applicationContext.cacheDir) +
+            (context.applicationContext.externalCacheDir?.let { LiteCacheEvictor.directorySize(it) } ?: 0L)
+        return StorageBreakdown(
+            httpCacheBytes = LiteCacheEvictor.directorySize(httpCacheDir),
+            tileCacheBytes = LiteCacheEvictor.directorySize(tileCacheDir),
+            dbBytes = if (dbFile.exists()) dbFile.length() else 0L,
+            tempBytes = temp,
+            pendingQueueCount = pendingSyncCount()
+        )
+    }
+
+    fun saveSession(clientId: String, activityType: String, title: String, startedAtMs: Long, paused: Boolean) {
         val cv = ContentValues().apply {
             put("client_id", clientId)
             put("activity_type", activityType)
+            put("title", title)
             put("started_at_ms", startedAtMs)
             put("paused", if (paused) 1 else 0)
         }
         writableDatabase.insertWithOnConflict("active_session", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
-    @Synchronized
-    fun appendPoint(clientId: String, pt: LitePoint) {
+    fun appendPoint(clientId: String, pt: GpsPoint) {
         val cv = ContentValues().apply {
             put("client_id", clientId)
             put("lat", pt.lat)
             put("lng", pt.lng)
-            put("ele", pt.ele)
+            if (pt.ele != null) put("ele", pt.ele) else putNull("ele")
             put("time_ms", pt.timeMs)
             if (pt.accuracyM != null) put("accuracy_m", pt.accuracyM) else putNull("accuracy_m")
         }
         writableDatabase.insert("active_points", null, cv)
     }
 
-    @Synchronized
-    fun loadUnfinishedSession(): LiteDraftSession? {
-        val db = readableDatabase
-        var cid: String? = null
-        var type = "run"
-        var started = 0L
-        var paused = false
-        db.rawQuery("SELECT client_id, activity_type, started_at_ms, paused FROM active_session LIMIT 1", null).use { c ->
-            if (c.moveToFirst()) {
-                cid = c.getString(0)
-                type = c.getString(1)
-                started = c.getLong(2)
-                paused = c.getInt(3) == 1
-            }
-        }
-        val sessionId = cid ?: return null
-        val pts = mutableListOf<LitePoint>()
-        db.rawQuery(
-            "SELECT lat, lng, ele, time_ms, accuracy_m FROM active_points WHERE client_id = ? ORDER BY time_ms ASC",
-            arrayOf(sessionId)
+    fun loadActiveDraft(): ActiveDraft? {
+        readableDatabase.rawQuery(
+            "SELECT client_id, activity_type, title, started_at_ms, paused FROM active_session LIMIT 1",
+            null
         ).use { c ->
-            while (c.moveToNext()) {
-                pts.add(
-                    LitePoint(
-                        lat = c.getDouble(0),
-                        lng = c.getDouble(1),
-                        ele = c.getDouble(2),
-                        timeMs = c.getLong(3),
-                        accuracyM = if (c.isNull(4)) null else c.getDouble(4),
-                    )
-                )
+            if (!c.moveToFirst()) return null
+            val cid = c.getString(0)
+            val sport = c.getString(1)
+            val title = c.getString(2)
+            val start = c.getLong(3)
+            val paused = c.getInt(4) == 1
+            val pts = mutableListOf<GpsPoint>()
+            readableDatabase.rawQuery(
+                "SELECT lat, lng, ele, time_ms, accuracy_m FROM active_points WHERE client_id = ? ORDER BY id ASC",
+                arrayOf(cid)
+            ).use { pc ->
+                while (pc.moveToNext()) {
+                    val ele = if (pc.isNull(2)) null else pc.getDouble(2)
+                    val acc = if (pc.isNull(4)) null else pc.getDouble(4)
+                    pts.add(GpsPoint(pc.getDouble(0), pc.getDouble(1), ele, pc.getLong(3), acc))
+                }
             }
+            return ActiveDraft(cid, sport, title, start, paused, pts)
         }
-        return LiteDraftSession(sessionId, type, started, paused, pts)
     }
 
-    @Synchronized
-    fun clearActiveSession(clientId: String) {
-        val db = writableDatabase
-        db.delete("active_points", "client_id = ?", arrayOf(clientId))
-        db.delete("active_session", "client_id = ?", arrayOf(clientId))
+    fun deleteDraft(clientId: String) {
+        writableDatabase.delete("active_points", "client_id = ?", arrayOf(clientId))
+        writableDatabase.delete("active_session", "client_id = ?", arrayOf(clientId))
     }
 
-    @Synchronized
     fun enqueueSync(clientId: String, payloadJson: String) {
         val cv = ContentValues().apply {
             put("client_id", clientId)
             put("payload_json", payloadJson)
-            put("attempts", 0)
             put("created_at_ms", System.currentTimeMillis())
+            put("attempts", 0)
         }
         writableDatabase.insertWithOnConflict("sync_queue", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
-    @Synchronized
-    fun pendingSyncs(): List<PendingSyncItem> {
-        val out = mutableListOf<PendingSyncItem>()
+    fun listPendingSync(): List<PendingSyncRow> {
+        val list = mutableListOf<PendingSyncRow>()
         readableDatabase.rawQuery(
-            "SELECT client_id, payload_json, attempts FROM sync_queue ORDER BY created_at_ms ASC",
+            "SELECT client_id, payload_json, created_at_ms, attempts FROM sync_queue ORDER BY created_at_ms ASC",
             null
         ).use { c ->
             while (c.moveToNext()) {
-                out.add(PendingSyncItem(c.getString(0), c.getString(1), c.getInt(2)))
+                list.add(PendingSyncRow(c.getString(0), c.getString(1), c.getLong(2), c.getInt(3)))
             }
         }
-        return out
+        return list
     }
 
-    @Synchronized
-    fun markSynced(clientId: String) {
-        val db = writableDatabase
-        db.delete("sync_queue", "client_id = ?", arrayOf(clientId))
-        var rem = 0
-        db.rawQuery("SELECT COUNT(*) FROM sync_queue", null).use { c ->
-            if (c.moveToFirst()) rem = c.getInt(0)
-        }
-        if (rem == 0) {
-            try {
-                db.execSQL("VACUUM")
-            } catch (_: Throwable) {}
-        }
+    fun removePendingSync(clientId: String) {
+        writableDatabase.delete("sync_queue", "client_id = ?", arrayOf(clientId))
     }
 
-    @Synchronized
-    fun recordSyncFailure(clientId: String, error: String) {
-        writableDatabase.execSQL(
-            "UPDATE sync_queue SET attempts = attempts + 1, last_error = ? WHERE client_id = ?",
-            arrayOf(error, clientId)
-        )
+    fun incrementSyncAttempt(clientId: String) {
+        writableDatabase.execSQL("UPDATE sync_queue SET attempts = attempts + 1 WHERE client_id = ?", arrayOf(clientId))
     }
 
-    private fun dirSize(dir: File?): Long {
-        if (dir == null || !dir.exists()) return 0L
-        var total = 0L
-        dir.listFiles()?.forEach { f ->
-            total += if (f.isDirectory) dirSize(f) else f.length()
-        }
-        return total
-    }
-
-    private fun purgeDirectoryContents(dir: File?) {
-        if (dir == null || !dir.exists()) return
-        dir.listFiles()?.forEach { child ->
-            try {
-                if (child.isDirectory) {
-                    purgeDirectoryContents(child)
-                    child.delete()
-                } else {
-                    child.delete()
-                }
-            } catch (_: Throwable) {}
+    fun pendingSyncCount(): Int {
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM sync_queue", null).use { c ->
+            return if (c.moveToFirst()) c.getInt(0) else 0
         }
     }
 }

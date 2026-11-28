@@ -1,34 +1,35 @@
 package com.stride.tracker.lite.core
 
-import org.json.JSONObject
 import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.*
 
-data class LitePoint(
+data class GpsPoint(
     val lat: Double,
     val lng: Double,
-    val ele: Double = 0.0,
+    val ele: Double?,
     val timeMs: Long,
-    val accuracyM: Double? = null,
-) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("lat", lat)
-        put("lng", lng)
-        put("ele", ele)
-        put("timeMs", timeMs)
-        if (accuracyM != null) put("accuracyM", accuracyM)
-    }
-}
+    val accuracyM: Double? = null
+)
 
-data class ProcessedMetrics(
+data class SplitKmLite(
+    val kmIndex: Int,
     val distanceM: Double,
-    val movingTimeS: Int,
     val elapsedTimeS: Int,
+    val paceSecPerKm: Int
+)
+
+data class ProcessedSummary(
+    val points: List<GpsPoint>,
+    val distanceM: Double,
+    val elapsedTimeS: Int,
+    val movingTimeS: Int,
     val elevationGainM: Double,
-    val avgSpeedMps: Double,
-    val calories: Int,
+    val elevationLossM: Double,
+    val encodedPolyline: String,
+    val splits: List<SplitKmLite>
 )
 
 object TrackProcessorLite {
@@ -37,183 +38,183 @@ object TrackProcessorLite {
     fun haversineMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
         val dLat = Math.toRadians(lat2 - lat1)
         val dLng = Math.toRadians(lng2 - lng1)
-        val rLat1 = Math.toRadians(lat1)
-        val rLat2 = Math.toRadians(lat2)
-        val sinDLat = sin(dLat / 2.0)
-        val sinDLng = sin(dLng / 2.0)
-        val a = sinDLat * sinDLat + cos(rLat1) * cos(rLat2) * sinDLng * sinDLng
-        val c = 2.0 * atan2(sqrt(a), sqrt(max(0.0, 1.0 - a)))
-        return EARTH_RADIUS_M * c
+        val a = sin(dLat / 2).pow(2) +
+            cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLng / 2).pow(2)
+        return EARTH_RADIUS_M * 2 * atan2(sqrt(a), sqrt(max(0.0, 1.0 - a)))
     }
 
-    fun process(raw: List<LitePoint>, activityType: String = "run", weightKg: Double = 70.0): ProcessedMetrics {
-        if (raw.size < 2) {
-            return ProcessedMetrics(0.0, 0, 0, 0.0, 0.0, 0)
-        }
-        val maxAccuracy = if (activityType == "ride") 50.0 else 35.0
-        val maxSpeedMps = when (activityType) {
-            "walk", "hike" -> 6.5
-            "run" -> 12.5
-            "ride" -> 35.0
-            else -> 12.5
-        }
-        val movingMinSpeed = when (activityType) {
-            "walk", "hike" -> 0.4
-            "run" -> 0.7
-            "ride" -> 1.1
-            else -> 0.7
-        }
-
-        val sorted = raw.sortedBy { it.timeMs }
-        val clean = mutableListOf<LitePoint>()
-        for (pt in sorted) {
-            val acc = pt.accuracyM
-            if (acc != null && acc > maxAccuracy) continue
-            if (clean.isEmpty()) {
-                clean.add(pt)
-                continue
+    fun filterPoints(raw: List<GpsPoint>, sport: String): List<GpsPoint> {
+        val maxAccuracy = if (sport == "ride") 50.0 else 35.0
+        val maxSpeedMps = if (sport == "ride") 38.0 else 12.5
+        val kept = mutableListOf<GpsPoint>()
+        for (pt in raw) {
+            if (pt.accuracyM != null && pt.accuracyM > maxAccuracy) continue
+            val prev = kept.lastOrNull()
+            if (prev != null) {
+                if (pt.timeMs <= prev.timeMs) continue
+                val dt = (pt.timeMs - prev.timeMs) / 1000.0
+                val dist = haversineMeters(prev.lat, prev.lng, pt.lat, pt.lng)
+                if (dt > 0 && dist / dt > maxSpeedMps && dist > 60.0) continue
             }
-            val prev = clean.last()
-            val dtS = (pt.timeMs - prev.timeMs) / 1000.0
-            if (dtS <= 0.0) continue
-            val d = haversineMeters(prev.lat, prev.lng, pt.lat, pt.lng)
-            if (d / dtS > maxSpeedMps) continue
-            clean.add(pt)
+            kept.add(pt)
         }
+        return kept
+    }
 
-        if (clean.size < 2) {
-            return ProcessedMetrics(0.0, 0, 0, 0.0, 0.0, 0)
+    fun summarize(raw: List<GpsPoint>, sport: String): ProcessedSummary {
+        val pts = filterPoints(raw, sport)
+        if (pts.size < 2) {
+            return ProcessedSummary(
+                points = pts,
+                distanceM = 0.0,
+                elapsedTimeS = 0,
+                movingTimeS = 0,
+                elevationGainM = 0.0,
+                elevationLossM = 0.0,
+                encodedPolyline = encodePolyline(pts),
+                splits = emptyList()
+            )
         }
 
         var distM = 0.0
         var movingS = 0.0
-        var elevGain = 0.0
-        var elevCursor = clean.first().ele
-        for (i in 1 until clean.size) {
-            val a = clean[i - 1]
-            val b = clean[i]
-            val d = haversineMeters(a.lat, a.lng, b.lat, b.lng)
-            val dtS = max(0.001, (b.timeMs - a.timeMs) / 1000.0)
-            distM += d
-            if (d / dtS >= movingMinSpeed) {
-                movingS += dtS
+        val eles = pts.mapNotNull { it.ele }
+        var gainM = 0.0
+        var lossM = 0.0
+        if (eles.size >= 3) {
+            val smoothed = eles.indices.map { i ->
+                val window = listOfNotNull(eles.getOrNull(i - 1), eles[i], eles.getOrNull(i + 1)).sorted()
+                window[window.size / 2]
             }
-            val dEle = b.ele - elevCursor
-            if (dEle >= 3.0) {
-                elevGain += dEle
-                elevCursor = b.ele
-            } else if (dEle <= -3.0) {
-                elevCursor = b.ele
+            var anchor = smoothed.first()
+            for (e in smoothed.drop(1)) {
+                val delta = e - anchor
+                if (delta >= 3.0) {
+                    gainM += delta
+                    anchor = e
+                } else if (delta <= -3.0) {
+                    lossM += -delta
+                    anchor = e
+                }
             }
         }
 
-        val elapsedS = max(1, ((clean.last().timeMs - clean.first().timeMs) / 1000L).toInt())
-        val finalMovingS = max(if (distM > 5) 1 else 0, movingS.roundToInt())
-        val avgSpeed = if (finalMovingS > 0) distM / finalMovingS else 0.0
-        val met = when (activityType) {
-            "walk" -> 3.8
-            "hike" -> 6.0
-            "ride" -> 8.0
-            else -> 9.8
+        val splits = mutableListOf<SplitKmLite>()
+        var splitStartDist = 0.0
+        var splitStartTimeMs = pts.first().timeMs
+        var nextKmMark = 1000.0
+
+        for (i in 1 until pts.size) {
+            val prev = pts[i - 1]
+            val cur = pts[i]
+            val d = haversineMeters(prev.lat, prev.lng, cur.lat, cur.lng)
+            val dt = (cur.timeMs - prev.timeMs) / 1000.0
+            distM += d
+            if (dt > 0 && dt <= 20.0 && (d / dt) >= 0.45) {
+                movingS += dt
+            }
+            while (distM >= nextKmMark) {
+                val segDist = 1000.0
+                val segSec = ((cur.timeMs - splitStartTimeMs) / 1000.0).roundToInt().coerceAtLeast(1)
+                splits.add(SplitKmLite(splits.size + 1, segDist, segSec, segSec))
+                splitStartDist += 1000.0
+                splitStartTimeMs = cur.timeMs
+                nextKmMark += 1000.0
+            }
         }
-        val calories = max(0, ((met * weightKg * (finalMovingS / 3600.0)).roundToInt()))
-        return ProcessedMetrics(distM, finalMovingS, elapsedS, elevGain, avgSpeed, calories)
+        val tailDist = distM - splitStartDist
+        if (tailDist >= 50.0) {
+            val segSec = ((pts.last().timeMs - splitStartTimeMs) / 1000.0).roundToInt().coerceAtLeast(1)
+            val pace = (segSec / (tailDist / 1000.0)).roundToInt().coerceAtLeast(60)
+            splits.add(SplitKmLite(splits.size + 1, tailDist, segSec, pace))
+        }
+
+        val elapsedS = ((pts.last().timeMs - pts.first().timeMs) / 1000.0).roundToInt().coerceAtLeast(1)
+        val finalMoving = movingS.roundToInt().coerceIn(if (distM > 10) 1 else 0, elapsedS)
+        return ProcessedSummary(
+            points = pts,
+            distanceM = distM,
+            elapsedTimeS = elapsedS,
+            movingTimeS = finalMoving,
+            elevationGainM = gainM,
+            elevationLossM = lossM,
+            encodedPolyline = encodePolyline(pts),
+            splits = splits
+        )
     }
 
-    fun decodePolyline(encoded: String): List<Pair<Double, Double>> {
+    fun encodePolyline(points: List<GpsPoint>): String {
+        val out = StringBuilder()
+        var lastLat = 0
+        var lastLng = 0
+        for (p in points) {
+            val latE5 = (p.lat * 1e5).roundToInt()
+            val lngE5 = (p.lng * 1e5).roundToInt()
+            encodeSigned(latE5 - lastLat, out)
+            encodeSigned(lngE5 - lastLng, out)
+            lastLat = latE5
+            lastLng = lngE5
+        }
+        return out.toString()
+    }
+
+    private fun encodeSigned(value: Int, out: StringBuilder) {
+        var v = if (value < 0) (value shl 1).inv() else (value shl 1)
+        while (v >= 0x20) {
+            out.append(((0x20 or (v and 0x1f)) + 63).toChar())
+            v = v shr 5
+        }
+        out.append((v + 63).toChar())
+    }
+
+    fun decodePolyline(encoded: String): List<GpsPoint> {
         if (encoded.isEmpty()) return emptyList()
-        val out = ArrayList<Pair<Double, Double>>()
+        val pts = mutableListOf<GpsPoint>()
         var index = 0
         var lat = 0
         var lng = 0
         while (index < encoded.length) {
-            var b: Int
             var shift = 0
             var result = 0
+            var b: Int
             do {
+                if (index >= encoded.length) break
                 b = encoded[index++].code - 63
                 result = result or ((b and 0x1f) shl shift)
                 shift += 5
-            } while (b >= 0x20 && index < encoded.length)
+            } while (b >= 0x20)
             lat += if ((result and 1) != 0) (result shr 1).inv() else (result shr 1)
 
             shift = 0
             result = 0
-            while (index < encoded.length) {
+            do {
+                if (index >= encoded.length) break
                 b = encoded[index++].code - 63
                 result = result or ((b and 0x1f) shl shift)
                 shift += 5
-                if (b < 0x20) break
-            }
+            } while (b >= 0x20)
             lng += if ((result and 1) != 0) (result shr 1).inv() else (result shr 1)
-            out.add(lat / 1e5 to lng / 1e5)
+            pts.add(GpsPoint(lat / 1e5, lng / 1e5, null, 0L))
         }
-        return out
+        return pts
     }
 
-    fun parseGpxPoints(gpxXml: String): List<LitePoint> {
-        val trkptRegex = Regex("<trkpt\\s+[^>]*lat=\"([^\"]+)\"[^>]*lon=\"([^\"]+)\"[^>]*>([\\s\\S]*?)</trkpt>", RegexOption.IGNORE_CASE)
-        val eleRegex = Regex("<ele>([^<]+)</ele>", RegexOption.IGNORE_CASE)
-        val timeRegex = Regex("<time>([^<]+)</time>", RegexOption.IGNORE_CASE)
-        val isoFormats = listOf("yyyy-MM-dd'T'HH:mm:ss'Z'", "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
-        val now = System.currentTimeMillis()
-        val points = mutableListOf<LitePoint>()
-
-        trkptRegex.findAll(gpxXml).forEachIndexed { idx, match ->
-            val lat = match.groupValues[1].toDoubleOrNull() ?: return@forEachIndexed
-            val lng = match.groupValues[2].toDoubleOrNull() ?: return@forEachIndexed
-            val inner = match.groupValues[3]
-            val ele = eleRegex.find(inner)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
-            val timeText = timeRegex.find(inner)?.groupValues?.get(1)?.trim()
-            var ts = now + idx * 1000L
-            if (!timeText.isNullOrEmpty()) {
-                for (fmt in isoFormats) {
-                    try {
-                        val parser = SimpleDateFormat(fmt, Locale.US).apply {
-                            timeZone = TimeZone.getTimeZone("UTC")
-                        }
-                        val parsed = parser.parse(timeText)
-                        if (parsed != null) {
-                            ts = parsed.time
-                            break
-                        }
-                    } catch (_: Throwable) {}
-                }
-            }
-            points.add(LitePoint(lat = lat, lng = lng, ele = ele, timeMs = ts, accuracyM = 5.0))
+    fun toGpxXml(title: String, sport: String, points: List<GpsPoint>): String {
+        val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
         }
-        return points
-    }
-
-    fun formatDuration(seconds: Int): String {
-        val s = max(0, seconds)
-        val h = s / 3600
-        val m = (s % 3600) / 60
-        val sec = s % 60
-        return if (h > 0) String.format(Locale.US, "%d:%02d:%02d", h, m, sec)
-        else String.format(Locale.US, "%02d:%02d", m, sec)
-    }
-
-    fun formatPaceOrSpeed(activityType: String, speedMps: Double, units: String): String {
-        if (speedMps <= 0.05) return "--"
-        val imperial = units == "imperial"
-        return if (activityType == "ride") {
-            val v = if (imperial) speedMps * 2.23694 else speedMps * 3.6
-            String.format(Locale.US, "%.1f %s", v, if (imperial) "mph" else "km/h")
-        } else {
-            val unitMeters = if (imperial) 1609.344 else 1000.0
-            val secPerUnit = (unitMeters / speedMps).roundToInt()
-            val min = secPerUnit / 60
-            val sec = secPerUnit % 60
-            String.format(Locale.US, "%d:%02d %s", min, sec, if (imperial) "/mi" else "/km")
+        val escapedTitle = title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        val sb = StringBuilder()
+        sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+        sb.append("<gpx version=\"1.1\" creator=\"Stride Lite 2.0\">\n")
+        sb.append("  <trk><name>$escapedTitle</name><type>$sport</type><trkseg>\n")
+        for (p in points) {
+            sb.append("    <trkpt lat=\"${p.lat}\" lon=\"${p.lng}\">")
+            if (p.ele != null) sb.append("<ele>${p.ele}</ele>")
+            if (p.timeMs > 0) sb.append("<time>${iso.format(Date(p.timeMs))}</time>")
+            sb.append("</trkpt>\n")
         }
-    }
-
-    fun formatDistance(meters: Double, units: String): String {
-        return if (units == "imperial") {
-            String.format(Locale.US, "%.2f mi", meters / 1609.344)
-        } else {
-            String.format(Locale.US, "%.2f km", meters / 1000.0)
-        }
+        sb.append("  </trkseg></trk>\n</gpx>")
+        return sb.toString()
     }
 }

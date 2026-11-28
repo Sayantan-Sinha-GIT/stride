@@ -67,7 +67,9 @@ export async function HEAD(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const { variant, filename, externalUrl } = resolveVariant(request);
   if (externalUrl) {
-    return NextResponse.redirect(externalUrl, 302);
+    const versionTag = request.nextUrl.searchParams.get('v');
+    const redirectUrl = versionTag ? `${externalUrl}?v=${encodeURIComponent(versionTag)}` : externalUrl;
+    return NextResponse.redirect(redirectUrl, 302);
   }
 
   const local = await resolveLocalApk(variant);

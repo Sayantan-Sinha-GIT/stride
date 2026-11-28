@@ -59,14 +59,18 @@ export default function DownloadPage({ params }: { params: Promise<{ locale: str
   useEffect(() => {
     const origin =
       typeof window !== 'undefined' ? window.location.origin : 'https://stride-web.srimantasutapa123.workers.dev';
+    const ver =
+      qrVariant === 'lite'
+        ? manifest?.lite?.sha256?.slice(0, 8) ?? 'v2lite'
+        : manifest?.full?.sha256?.slice(0, 8) ?? 'v1full';
     const target =
       qrVariant === 'lite'
-        ? `${origin}/api/download-apk?variant=lite`
-        : `${origin}/api/download-apk`;
+        ? `${origin}/api/download-apk?variant=lite&v=${ver}`
+        : `${origin}/api/download-apk?v=${ver}`;
     QRCode.toDataURL(target, { width: 220, margin: 1 })
       .then(setQrUrl)
       .catch(() => {});
-  }, [qrVariant]);
+  }, [qrVariant, manifest]);
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-8 md:px-6 md:py-10">
@@ -98,7 +102,7 @@ export default function DownloadPage({ params }: { params: Promise<{ locale: str
             <div className="flex items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--stride-accent)] px-2.5 py-0.5 text-[11px] font-bold text-white">
                 <Lightning size={13} weight="fill" />
-                {isHi ? 'सुझावित · अल्ट्रा-लाइट' : 'RECOMMENDED · LITE'}
+                {isHi ? 'सुझावित · स्ट्राइड लाइट 2.0' : 'RECOMMENDED · LITE 2.0'}
               </span>
               <span className="font-mono text-xs font-bold text-[var(--stride-secondary)]">
                 {formatBytes(manifest?.lite?.size)}
@@ -107,8 +111,8 @@ export default function DownloadPage({ params }: { params: Promise<{ locale: str
             <h2 className="text-2xl font-bold">Stride Lite</h2>
             <p className="text-xs leading-relaxed text-[var(--stride-text-secondary)]">
               {isHi
-                ? 'नेटिव Kotlin में बना हल्का ऐप — 0 MB मैप टाइल कैश, 512 KB–5 MB हार्ड-सीमित SQLite LRU कैश, डेटा सेवर और बैकग्राउंड GPS रिकवरी।'
-                : 'Pure native Android build with zero heavy engine libraries, 0 bytes of map tile bloat, configurable 512 KB–5 MB LRU cache cap, SQLite VACUUM, and Data Saver.'}
+                ? 'Material 3 नेटिव Kotlin Android ऐप — Esri सड़क/डार्क मैप्स, 1 MB–5 MB सख्त LRU कैश सीमा, SQLite VACUUM, डेटा सेवर और क्रैश रिकवरी।'
+                : 'Full Material Design 3 native Kotlin app with crisp Esri street/dark route maps, configurable 1 MB–5 MB LRU cache cap, SQLite VACUUM, Data Saver, and GPS crash recovery.'}
             </p>
             <ul className="space-y-1.5 pt-1 text-xs text-[var(--stride-text-secondary)]">
               <li className="flex items-center gap-2">
@@ -267,12 +271,12 @@ export default function DownloadPage({ params }: { params: Promise<{ locale: str
             </tr>
             <tr>
               <td className="py-2 pr-4 font-medium">{isHi ? 'अधिकतम कैश सीमा' : 'Disk Cache Policy'}</td>
-              <td className="py-2 pr-4">512 KB / 2 MB / 5 MB LRU + SQLite VACUUM</td>
+              <td className="py-2 pr-4">1 MB / 2 MB / 5 MB LRU + SQLite VACUUM</td>
               <td className="py-2">15 MB mem + 4 MB temp cap + Clear Cache</td>
             </tr>
             <tr>
-              <td className="py-2 pr-4 font-medium">{isHi ? 'मैप टाइल स्टोरेज' : 'Map Tile Disk Cache'}</td>
-              <td className="py-2 pr-4 text-[var(--stride-success)]">0 bytes (Vector Canvas)</td>
+              <td className="py-2 pr-4 font-medium">{isHi ? 'मैप इंजन व कैश' : 'Map Engine & Cache'}</td>
+              <td className="py-2 pr-4 text-[var(--stride-success)]">Bounded Esri Tiles / 0 B Data Saver</td>
               <td className="py-2 text-[var(--stride-success)]">0 bytes (Vector Canvas)</td>
             </tr>
             <tr>

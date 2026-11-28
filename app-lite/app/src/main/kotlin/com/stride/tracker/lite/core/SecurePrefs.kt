@@ -12,30 +12,24 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 class SecurePrefs(context: Context) {
-    private val prefs = context.getSharedPreferences("stride_lite_prefs", Context.MODE_PRIVATE)
+    private val prefs = context.applicationContext.getSharedPreferences("stride_lite_v2_prefs", Context.MODE_PRIVATE)
 
     companion object {
-        private const val KEY_ALIAS = "stride_lite_aes_key_v1"
-        private const val ACCESS_KEY = "enc_access_token"
-        private const val REFRESH_KEY = "enc_refresh_token"
-        private const val BASE_URL_KEY = "api_base_url"
-        private const val THEME_KEY = "theme_mode"
-        private const val LANG_KEY = "language"
-        private const val UNITS_KEY = "units"
-        private const val DATA_SAVER_KEY = "data_saver"
-        private const val AUTO_PURGE_KEY = "auto_purge_cache"
-        private const val CACHE_CAP_KEY = "cache_cap_bytes"
+        private const val KEY_ALIAS = "stride_lite_v2_aes"
+        private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+        private const val TRANSFORMATION = "AES/GCM/NoPadding"
 
-        const val DEFAULT_CACHE_CAP_BYTES = 2L * 1024L * 1024L
+        const val CAP_1_MB = 1024L * 1024L
+        const val CAP_2_MB = 2L * 1024L * 1024L
+        const val CAP_5_MB = 5L * 1024L * 1024L
     }
 
-    private fun getOrCreateKey(): SecretKey? {
-        return try {
-            val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-            val existing = ks.getKey(KEY_ALIAS, null) as? SecretKey
-            if (existing != null) return existing
-            val gen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-            val spec = KeyGenParameterSpec.Builder(
+    private fun getOrCreateSecretKey(): SecretKey {
+        val ks = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+        ks.getKey(KEY_ALIAS, null)?.let { return it as SecretKey }
+        val kg = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+        kg.init(
+            KeyGenParameterSpec.Builder(
                 KEY_ALIAS,
                 KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
             )
@@ -43,104 +37,89 @@ class SecurePrefs(context: Context) {
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256)
                 .build()
-            gen.init(spec)
-            gen.generateKey()
-        } catch (_: Throwable) {
-            null
-        }
+        )
+        return kg.generateKey()
     }
 
-    private fun encrypt(plain: String): String {
-        val key = getOrCreateKey() ?: return "plain:$plain"
-        return try {
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.ENCRYPT_MODE, key)
+    private fun putSecret(key: String, value: String?) {
+        if (value.isNullOrEmpty()) {
+            prefs.edit().remove(key).apply()
+            return
+        }
+        try {
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.ENCRYPT_MODE, getOrCreateSecretKey())
+            val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
             val iv = cipher.iv
-            val enc = cipher.doFinal(plain.toByteArray(Charsets.UTF_8))
-            val combined = ByteArray(1 + iv.size + enc.size)
-            combined[0] = iv.size.toByte()
-            System.arraycopy(iv, 0, combined, 1, iv.size)
-            System.arraycopy(enc, 0, combined, 1 + iv.size, enc.size)
-            "gcm:${Base64.encodeToString(combined, Base64.NO_WRAP)}"
+            val combined = ByteArray(iv.size + encrypted.size)
+            System.arraycopy(iv, 0, combined, 0, iv.size)
+            System.arraycopy(encrypted, 0, combined, iv.size, encrypted.size)
+            prefs.edit().putString(key, Base64.encodeToString(combined, Base64.NO_WRAP)).apply()
         } catch (_: Throwable) {
-            "plain:$plain"
+            prefs.edit().putString(key, value).apply()
         }
     }
 
-    private fun decrypt(raw: String?): String? {
-        if (raw.isNullOrEmpty()) return null
-        if (raw.startsWith("plain:")) return raw.removePrefix("plain:")
-        if (!raw.startsWith("gcm:")) return raw
-        val key = getOrCreateKey() ?: return null
+    private fun getSecret(key: String): String? {
+        val raw = prefs.getString(key, null) ?: return null
         return try {
-            val combined = Base64.decode(raw.removePrefix("gcm:"), Base64.NO_WRAP)
-            val ivLen = combined[0].toInt() and 0xFF
-            val iv = combined.copyOfRange(1, 1 + ivLen)
-            val enc = combined.copyOfRange(1 + ivLen, combined.size)
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv))
-            String(cipher.doFinal(enc), Charsets.UTF_8)
+            val combined = Base64.decode(raw, Base64.NO_WRAP)
+            if (combined.size <= 12) return null
+            val iv = combined.copyOfRange(0, 12)
+            val cipherText = combined.copyOfRange(12, combined.size)
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.DECRYPT_MODE, getOrCreateSecretKey(), GCMParameterSpec(128, iv))
+            String(cipher.doFinal(cipherText), Charsets.UTF_8)
         } catch (_: Throwable) {
-            null
+            raw
         }
     }
 
     var accessToken: String?
-        get() = decrypt(prefs.getString(ACCESS_KEY, null))
-        set(value) {
-            if (value.isNullOrEmpty()) {
-                prefs.edit().remove(ACCESS_KEY).apply()
-            } else {
-                prefs.edit().putString(ACCESS_KEY, encrypt(value)).apply()
-            }
-        }
+        get() = getSecret("access_token")
+        set(value) = putSecret("access_token", value)
 
     var refreshToken: String?
-        get() = decrypt(prefs.getString(REFRESH_KEY, null))
-        set(value) {
-            if (value.isNullOrEmpty()) {
-                prefs.edit().remove(REFRESH_KEY).apply()
-            } else {
-                prefs.edit().putString(REFRESH_KEY, encrypt(value)).apply()
-            }
-        }
+        get() = getSecret("refresh_token")
+        set(value) = putSecret("refresh_token", value)
 
-    fun clearSession() {
-        prefs.edit().remove(ACCESS_KEY).remove(REFRESH_KEY).apply()
-    }
-
-    fun hasSession(): Boolean = !accessToken.isNullOrEmpty()
-
-    var baseUrl: String
-        get() = prefs.getString(BASE_URL_KEY, null)?.takeIf { it.isNotBlank() }
-            ?: BuildConfig.DEFAULT_API_URL
-        set(value) {
-            val clean = value.trim().trimEnd('/')
-            if (clean.isEmpty()) prefs.edit().remove(BASE_URL_KEY).apply()
-            else prefs.edit().putString(BASE_URL_KEY, clean).apply()
-        }
-
-    var themeMode: String
-        get() = prefs.getString(THEME_KEY, "dark") ?: "dark"
-        set(value) = prefs.edit().putString(THEME_KEY, value).apply()
+    var apiBaseUrl: String
+        get() = prefs.getString("api_base_url", BuildConfig.DEFAULT_API_URL) ?: BuildConfig.DEFAULT_API_URL
+        set(value) = prefs.edit().putString("api_base_url", value.trimEnd('/')).apply()
 
     var language: String
-        get() = prefs.getString(LANG_KEY, "en") ?: "en"
-        set(value) = prefs.edit().putString(LANG_KEY, value).apply()
+        get() = prefs.getString("language", "en") ?: "en"
+        set(value) = prefs.edit().putString("language", if (value == "hi") "hi" else "en").apply()
+
+    var themeMode: String
+        get() = prefs.getString("theme_mode", "system") ?: "system"
+        set(value) = prefs.edit().putString("theme_mode", value).apply()
 
     var units: String
-        get() = prefs.getString(UNITS_KEY, "metric") ?: "metric"
-        set(value) = prefs.edit().putString(UNITS_KEY, value).apply()
-
-    var dataSaver: Boolean
-        get() = prefs.getBoolean(DATA_SAVER_KEY, true)
-        set(value) = prefs.edit().putBoolean(DATA_SAVER_KEY, value).apply()
-
-    var autoPurgeOnClose: Boolean
-        get() = prefs.getBoolean(AUTO_PURGE_KEY, false)
-        set(value) = prefs.edit().putBoolean(AUTO_PURGE_KEY, value).apply()
+        get() = prefs.getString("units", "metric") ?: "metric"
+        set(value) = prefs.edit().putString("units", if (value == "imperial") "imperial" else "metric").apply()
 
     var cacheCapBytes: Long
-        get() = prefs.getLong(CACHE_CAP_KEY, DEFAULT_CACHE_CAP_BYTES)
-        set(value) = prefs.edit().putLong(CACHE_CAP_KEY, value).apply()
+        get() = prefs.getLong("cache_cap_bytes", CAP_2_MB).coerceIn(CAP_1_MB, CAP_5_MB)
+        set(value) = prefs.edit().putLong("cache_cap_bytes", value.coerceIn(CAP_1_MB, CAP_5_MB)).apply()
+
+    var dataSaver: Boolean
+        get() = prefs.getBoolean("data_saver", false)
+        set(value) = prefs.edit().putBoolean("data_saver", value).apply()
+
+    var autoPurgeOnClose: Boolean
+        get() = prefs.getBoolean("auto_purge_on_close", false)
+        set(value) = prefs.edit().putBoolean("auto_purge_on_close", value).apply()
+
+    var userId: String?
+        get() = prefs.getString("user_id", null)
+        set(value) = prefs.edit().putString("user_id", value).apply()
+
+    fun hasSession(): Boolean = !accessToken.isNullOrBlank()
+
+    fun clearSession() {
+        putSecret("access_token", null)
+        putSecret("refresh_token", null)
+        userId = null
+    }
 }
